@@ -11,6 +11,8 @@ let
 
   inherit (rootCfg) domain;
 
+  roundcubeDb = config.services.roundcube.database.dbname;
+
   dkimPublicKey = replaceStrings ["\n"] [""] cfg.dkim.publicKey;
 
 in {
@@ -26,11 +28,11 @@ in {
         '';
       };
 
-      roundcube.database = mkOption {
-        type = types.str;
-        default = "roundcube";
+      maxSizeMb = mkOption {
+        type = types.int;
+        default = 32;
         description = ''
-          Roundcube PostgreSQL database name.
+          Maximum allowed e-mail size.
         '';
       };
 
@@ -104,13 +106,17 @@ in {
       "mail.${domain}" = {
         forceSSL = true;
         enableACME = true;
+        locations."/".extraConfig = ''
+          client_max_body_size ${toString cfg.maxSizeMb}m;
+        '';
       };
     };
 
     services.roundcube = {
       enable = true;
       hostName = "mail.${domain}";
-      database.dbname = cfg.roundcube.database;
+      plugins = [ "managesieve" ];
+      maxAttachmentSize = cfg.maxSizeMb;
       extraConfig = ''
         $config['username_domain'] = '${domain}';
         $config['username_domain_forced'] = true;
@@ -154,7 +160,10 @@ in {
         };
       };
 
-      extraConfig = builtins.readFile "${configs}/main.cf";
+      extraConfig = ''
+        message_size_limit = ${toString (cfg.maxSizeMb * 1024 * 1024)}
+        ${builtins.readFile "${configs}/main.cf"}
+      '';
       extraMasterConf = builtins.readFile ./postfix/master.cf;
     };
 
@@ -270,7 +279,7 @@ in {
     };
 
     services.postgresql = {
-      ensureDatabases = [ cfg.roundcube.database ];
+      ensureDatabases = [ roundcubeDb ];
       ensureUsers = [
         {
           name = "postfix";
@@ -280,7 +289,7 @@ in {
         }
         {
           name = "roundcube";
-          ensurePermissions = { "DATABASE \"${cfg.roundcube.database}\"" = "ALL PRIVILEGES"; };
+          ensurePermissions = { "DATABASE \"${roundcubeDb}\"" = "ALL PRIVILEGES"; };
         }
       ];
     };

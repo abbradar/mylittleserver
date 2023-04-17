@@ -9,7 +9,6 @@ smtpd_sender_login_maps = pgsql:@out@/login_maps.cf
 virtual_mailbox_maps = pgsql:@out@/recipient_maps.cf
 header_checks = pcre:@out@/header_checks.cf
 virtual_transport = lmtp:unix:/run/dovecot2/lmtp
-message_size_limit = 512000000
 
 # Encryption (server-side)
 smtpd_tls_mandatory_ciphers = high

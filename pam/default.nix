@@ -61,6 +61,10 @@ in {
     })
 
     (mkIf cfg.enable {
+      environment.systemPackages = with pkgs; [
+        pamtester
+      ];
+
       security.pam.services.mylittleserver.text =
         let
           confFile = pkgs.substituteAll {

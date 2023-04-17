@@ -114,7 +114,6 @@ in {
 
     environment.systemPackages = with pkgs; [
       mailuser
-      pamtester
     ];
 
     services.postgresql = {

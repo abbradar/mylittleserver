@@ -1,0 +1,16 @@
+driver = pgsql
+connect = dbname=@database@
+default_pass_scheme = SHA512-CRYPT
+
+password_query = SELECT \
+  name AS user, \
+  password \
+  FROM users WHERE name = '%n' AND enabled
+
+# Notice that we don't use "enabled"! All users, even disabled, should continue
+# to receive mail.
+user_query = SELECT \
+  name AS username \
+  FROM users WHERE name = '%n'
+
+iterate_query = SELECT name AS username FROM users

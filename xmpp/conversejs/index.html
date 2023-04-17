@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>xmpp.@domain@</title>
+    <link rel="stylesheet" type="text/css" media="screen" href="https://cdn.conversejs.org/css/converse.min.css">
+    <script src="https://cdn.conversejs.org/dist/converse.min.js" charset="utf-8"></script>
+    <script src="https://cdn.conversejs.org/3rdparty/libsignal-protocol.min.js" charset="utf-8"></script>
+  </head>
+  <body>
+    <noscript>Please enable JavaScript and add RequestPolicy rules!</noscript>
+  </body>
+</html>
+<script>
+  converse.initialize({
+    bosh_service_url: "https://xmpp.@domain@/http-bind/",
+    websocket_url: "wss://xmpp.@domain@/xmpp-websocket/",
+    view_mode: "fullscreen"
+  });
+</script>

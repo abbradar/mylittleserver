@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "db_auth"
+version = "1.0"
+description = "Web server for authorization via MyLittleServer users table"
+authors = [ "Nikolay Amiantov <ab@fmap.me>" ]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+aiohttp = "^3.8.3"
+asyncpg = "^0.27.0"
+
+[tool.poetry.dev-dependencies]
+
+[tool.poetry.scripts]
+db_auth = "db_auth:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

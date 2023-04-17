@@ -1,0 +1,9 @@
+hosts = /run/postgresql
+dbname = @database@
+query = SELECT users.name || '@%d'
+  FROM aliases LEFT JOIN users ON aliases.destination = users.id
+  WHERE aliases.source = '%s'
+  UNION
+  SELECT name || '@%d'
+  FROM users
+  WHERE '%s' = 'all@%d'

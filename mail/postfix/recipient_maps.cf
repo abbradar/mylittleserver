@@ -1,0 +1,3 @@
+hosts = /run/postgresql
+dbname = @database@
+query = SELECT name FROM users WHERE name = '%u'

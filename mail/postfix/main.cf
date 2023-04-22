@@ -1,5 +1,5 @@
 # Debugging
-soft_bounce = yes
+# soft_bounce = yes
 
 # Core things
 alias_maps =

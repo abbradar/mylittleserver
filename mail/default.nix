@@ -243,6 +243,7 @@ in {
           sieveBin = pkgs.symlinkJoin {
             name = "sieve-bin";
             paths = [
+              # Runs as `dovecot2-mail`; should have the necessary permissions.
               (pkgs.writeScriptBin "learn-spam" ''
                 #!${pkgs.stdenv.shell}
                 user="$1"
@@ -325,10 +326,10 @@ in {
 
     users = {
       users = {
-        dovecot2.extraGroups = [ "rspamd" ];
         dovecot2-mail = {
           group = "dovecot2-mail";
           isSystemUser = true;
+          extraGroups = [ "rspamd" ];
         };
       };
       groups = {

@@ -1,3 +1,4 @@
+{ mkPoetry2Nix }:
 { config, lib, pkgs, ... }:
 
 with lib;
@@ -23,7 +24,9 @@ let
     "pubsub.${domain}"
   ];
 
-  dbAuth = pkgs.python3.pkgs.callPackage ./db-auth { };
+  dbAuth = pkgs.python3.pkgs.callPackage ./db-auth {
+    poetry2nix = mkPoetry2Nix { inherit pkgs; };
+  };
 
 in {
   options = {

@@ -120,6 +120,8 @@ in {
       extraConfig = ''
         $config['username_domain'] = '${domain}';
         $config['username_domain_forced'] = true;
+        # Use a lo-bound SMTP with no TLS requirement.
+        $config['smtp_server'] = '127.0.0.1:588';
       '';
     };
 

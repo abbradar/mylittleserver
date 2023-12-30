@@ -30,7 +30,6 @@ smtp_tls_session_cache_timeout = $smtpd_tls_session_cache_timeout
 
 # Authentication
 smtpd_sasl_security_options = noanonymous
-smtpd_tls_auth_only = yes
 smtpd_sasl_type = dovecot
 smtpd_sasl_path = /run/dovecot2/auth-postfix
 

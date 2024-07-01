@@ -145,12 +145,12 @@ in {
           ];
         }];
       };
+    };
 
-      sliding-sync = {
-        enable = true;
-        settings = {
-          SYNCV3_SERVER = "https://matrix.${domain}";
-        };
+    services.matrix-sliding-sync = {
+      enable = true;
+      settings = {
+        SYNCV3_SERVER = "https://matrix.${domain}";
       };
     };
 

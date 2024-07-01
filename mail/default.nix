@@ -229,7 +229,7 @@ in {
       mailUser = "dovecot2-mail";
       mailGroup = "dovecot2-mail";
 
-      sieveScripts = {
+      sieve.scripts = {
         "before" = ./dovecot/sieve-before.d;
         "system" = ./dovecot/sieve-system;
       };

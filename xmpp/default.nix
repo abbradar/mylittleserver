@@ -110,7 +110,7 @@ in {
           "http_muc_log"
           "vcard_muc"
         ] ++ prosodyExtra;
-        withExtraLuaPackages = libs: with libs; [ cyrussasl luadbi-postgresql ];
+        withExtraLuaPackages = libs: with libs; [ luadbi-postgresql ];
       };
       modules = {
         legacyauth = false;

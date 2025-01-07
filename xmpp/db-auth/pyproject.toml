@@ -5,9 +5,9 @@ description = "Web server for authorization via MyLittleServer users table"
 authors = [ "Nikolay Amiantov <ab@fmap.me>" ]
 
 [tool.poetry.dependencies]
-python = "^3.10"
-aiohttp = "^3.9.0"
-asyncpg = "^0.29.0"
+python = ">= 3.10"
+aiohttp = ">= 3.9.0"
+asyncpg = ">= 0.29.0"
 
 [tool.poetry.dev-dependencies]
 

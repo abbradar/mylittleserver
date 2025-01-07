@@ -10,7 +10,6 @@ let
 
    matrixClientDiscover = pkgs.writeText "matrix-client-discover.json" (builtins.toJSON {
      "m.homeserver"."base_url" = "https://matrix.${domain}";
-     "org.matrix.msc3575.proxy"."url" = "https://matrix-sliding-sync.${domain}";
    });
 
    matrixServerDiscover = pkgs.writeText "matrix-server-discover.json" (builtins.toJSON {
@@ -86,19 +85,6 @@ in {
           '';
         };
       };
-      "matrix-sliding-sync.${domain}" = {
-        forceSSL = true;
-        enableACME = true;
-
-        locations."/" = {
-          proxyPass = "http://127.0.0.1:8009";
-          extraConfig = ''
-            proxy_set_header X-Forwarded-For $remote_addr;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header Host $host;
-          '';
-        };
-      };
     };
 
     services.matrix-synapse = {
@@ -144,13 +130,6 @@ in {
             { names = ["federation"]; compress = false; }
           ];
         }];
-      };
-    };
-
-    services.matrix-sliding-sync = {
-      enable = true;
-      settings = {
-        SYNCV3_SERVER = "https://matrix.${domain}";
       };
     };
 

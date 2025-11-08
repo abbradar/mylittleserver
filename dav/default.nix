@@ -1,13 +1,14 @@
-{ lib, config, pkgs, ... }:
-
-with lib;
-
-let
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
+with lib; let
   rootCfg = config.mylittleserver;
   cfg = config.mylittleserver.dav;
 
   inherit (rootCfg) domain;
-
 in {
   options = {
     mylittleserver.dav = {
@@ -55,7 +56,7 @@ in {
     services.radicale = {
       enable = true;
       settings = {
-        server.hosts = [ "127.0.0.1:5232" ];
+        server.hosts = ["127.0.0.1:5232"];
         auth.type = "http_x_remote_user";
         storage.filesystem_folder = cfg.dataDir;
       };

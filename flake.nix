@@ -1,18 +1,15 @@
 {
-  inputs = {
-    poetry2nix.url = "github:nix-community/poetry2nix/master";
-  };
+  inputs = {};
 
-  outputs = { self, poetry2nix }: {
+  outputs = {self}: {
     nixosModules.default.imports = [
       ./basic
       ./pam
       ./mail
       ./turn
       ./dav
-      (import ./xmpp { inherit (poetry2nix.lib) mkPoetry2Nix; })
+      ./xmpp
       ./matrix
     ];
   };
 }
-

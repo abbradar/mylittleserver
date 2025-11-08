@@ -1,13 +1,14 @@
-{ config, lib, pkgs, ... }:
-
-with lib;
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+with lib; let
   rootCfg = config.mylittleserver;
   cfg = config.mylittleserver.turn;
 
   inherit (rootCfg) domain;
-
 in {
   options = {
     mylittleserver.turn = {
@@ -29,15 +30,22 @@ in {
 
     networking.firewall = {
       allowedTCPPorts = [
-        3478 3479 # STUN
-        5349 5350 # STUNS
+        3478
+        3479 # STUN
+        5349
+        5350 # STUNS
       ];
       allowedUDPPorts = [
-        3478 3479 # STUN
-        5349 5350 # STUNS
+        3478
+        3479 # STUN
+        5349
+        5350 # STUNS
       ];
       allowedUDPPortRanges = [
-        { from = 49152; to = 65535; } # TURN
+        {
+          from = 49152;
+          to = 65535;
+        } # TURN
       ];
     };
 

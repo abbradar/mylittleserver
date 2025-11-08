@@ -1,7 +1,6 @@
 storage = "sql"
 sql = {
   driver = "PostgreSQL";
-  database = "@database@";
 }
 
 legacy_ssl_ports = { 5223 }
@@ -13,6 +12,8 @@ consider_bosh_secure = true
 cross_domain_websocket = true
 consider_websocket_secure = true
 
+-- FIXME: Move this to the NixOS config.
+authentication = "http"
 http_auth_url = "http://127.0.0.1:12344"
 
 welcome_message = "Hello $user! Please visit https://@domain@/private/ for information on this service. Use your login (without domain) and password."

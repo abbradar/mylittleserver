@@ -1,8 +1,10 @@
-{ lib, config, pkgs, ... }:
-
-with lib;
-
-let
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
+with lib; let
   cfg = config.mylittleserver;
 
   inherit (cfg) domain;
@@ -15,13 +17,14 @@ let
     <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
       ${concatMapStringsSep "\n" (meta: ''
         <Link rel="${meta.rel}" href="${meta.href}" />
-      '') cfg.hostMeta.links}
+      '')
+      cfg.hostMeta.links}
     </XRD>
   '';
 
   hostMetaJson = pkgs.writeText "host-meta.json" (builtins.toJSON cfg.hostMeta);
 
-  hostMetaLinksModule = { ... }: {
+  hostMetaLinksModule = {...}: {
     options = {
       rel = mkOption {
         type = types.str;
@@ -39,14 +42,13 @@ let
     };
   };
 
-  mailuserBins = makeBinPath [ pkgs.mkpasswd pkgs.gnused config.services.postgresql.package ];
+  mailuserBins = makeBinPath [pkgs.mkpasswd pkgs.gnused config.services.postgresql.package];
 
   mailuser = pkgs.writers.writeBashBin "mailuser" ''
     export PATH=${escapeShellArg mailuserBins}
     database=${escapeShellArg cfg.accounts.database}
     ${builtins.readFile ./mailuser.sh}
   '';
-
 in {
   options = {
     mylittleserver = {
@@ -109,7 +111,8 @@ in {
     '';
 
     networking.firewall.allowedTCPPorts = [
-      80 443 # HTTP
+      80
+      443 # HTTP
     ];
 
     environment.systemPackages = with pkgs; [
@@ -119,7 +122,7 @@ in {
     services.postgresql = {
       enable = true;
 
-      ensureDatabases = [ cfg.accounts.database ];
+      ensureDatabases = [cfg.accounts.database];
 
       ensureUsers = [
         {
@@ -169,10 +172,11 @@ in {
           };
         }
         (mapAttrs (host: opts: {
-          onlySSL = false;
-          forceSSL = false;
-          locations."^~ /.well-known/acme-challenge/".root = acmeChallengePath;
-        }) cfg.ssl.nonHttpsCerts)
+            onlySSL = false;
+            forceSSL = false;
+            locations."^~ /.well-known/acme-challenge/".root = acmeChallengePath;
+          })
+          cfg.ssl.nonHttpsCerts)
       ];
     };
 
@@ -182,16 +186,17 @@ in {
       }
 
       (mapAttrs (host: opts: {
-        webroot = acmeChallengePath;
-        dnsProvider = mkOverride 1000 null;
-      }) cfg.ssl.nonHttpsCerts)
+          webroot = acmeChallengePath;
+          dnsProvider = mkOverride 1000 null;
+        })
+        cfg.ssl.nonHttpsCerts)
     ];
 
     systemd.services."mls-init-basic-database" = {
       description = "Initialize basic MyLittleServer database.";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "postgresql.service" ];
-      path = [ config.services.postgresql.package ];
+      wantedBy = ["multi-user.target"];
+      after = ["postgresql.service"];
+      path = [config.services.postgresql.package];
       serviceConfig = {
         Type = "oneshot";
         User = "postgres";
@@ -208,7 +213,7 @@ in {
     '';
 
     users = {
-      users.nginx.extraGroups = [ "mylittleserver-ssl" ];
+      users.nginx.extraGroups = ["mylittleserver-ssl"];
       groups.mylittleserver-ssl = {};
     };
   };

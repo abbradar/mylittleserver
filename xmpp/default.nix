@@ -25,9 +25,7 @@ with lib; let
     "pubsub.${domain}"
   ];
 
-  dbAuth = pkgs.python3.pkgs.callPackage ./db-auth {
-    poetry2nix = mkPoetry2Nix {inherit pkgs;};
-  };
+  dbAuth = pkgs.python3.pkgs.callPackage ./db-auth {};
 in {
   options = {
     mylittleserver.xmpp = {
@@ -101,7 +99,6 @@ in {
           [
             "auth_http"
             "http_muc_log"
-            "vcard_muc"
           ]
           ++ prosodyExtra;
         withExtraLuaPackages = libs: with libs; [luadbi-postgresql];
@@ -116,6 +113,8 @@ in {
         websocket = true;
         cloud_notify = true;
         bookmarks = true;
+        # Use as a Component.
+        proxy65 = false;
       };
       extraModules =
         [
@@ -132,13 +131,13 @@ in {
       # We set the necessary options by ourselves.
       xmppComplianceSuite = false;
       extraConfig = let
-        config = pkgs.replaceVars ./prosody.cfg.lua {
+        luaCfg = pkgs.replaceVars ./prosody.cfg.lua {
           inherit domain;
           uploadSecret = cfg.upload.secret;
           turnSecret = config.mylittleserver.turn.secret;
         };
       in ''
-        Include "${config}"
+        Include "${luaCfg}"
       '';
       ssl = {
         # We can't use a certificate for the xmpp. subdomain:

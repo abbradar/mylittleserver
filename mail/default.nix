@@ -159,14 +159,7 @@ in {
       enableSubmission = true;
       enableSubmissions = true;
 
-      hostname = "smtp.${domain}";
-      inherit domain;
-      destination = [];
-      networksStyle = "host";
       postmasterAlias = "";
-
-      sslCert = "/var/lib/acme/smtp.${domain}/full.pem";
-      sslKey = "/var/lib/acme/smtp.${domain}/full.pem";
 
       mapFiles = {
         "sender_access" = pkgs.replaceVars ./postfix/sender_access.cf {
@@ -198,7 +191,7 @@ in {
         in
           concatLists (mapAttrsToList mkKeyVal (commonSubmissionOptions
             // {
-              smtpd_sasl_auth_enable = true;
+              smtpd_sasl_auth_enable = "yes";
             }));
       };
 
@@ -212,15 +205,14 @@ in {
         soft_bounce = true;
 
         # Core things
+        myhostname = "smtp.${domain}";
+        mydestination = [];
+        mynetworks_style = "host";
         virtual_mailbox_domains = [domain];
-        virtual_alias_maps = ["pgsql:${replaceDatabase maps}"];
+        virtual_alias_maps = ["pgsql:${replaceDatabase ./postfix/alias_maps.cf}"];
         smtpd_sender_login_maps = ["pgsql:${replaceDatabase ./postfix/login_maps.cf}"];
         virtual_mailbox_maps = ["pgsql:${replaceDatabase ./postfix/recipient_maps.cf}"];
-        header_checks = let
-          checks = pkgs.replaceVars ./postfix/header_checks.cf {
-            inherit domain;
-          };
-        in ["pcre:${checks}"];
+        header_checks = ["pcre:${./postfix/header_checks.cf}"];
         virtual_transport = "lmtp:unix:/run/dovecot2/lmtp";
 
         # Encryption (server-side)
@@ -228,6 +220,7 @@ in {
         smtpd_tls_mandatory_protocols = ["!SSLv2" "!SSLv3"];
         # This may not really be 1024 -- just a historical wart in the name
         smtpd_tls_dh1024_param_file = "/var/lib/dhparams/postfix.pem";
+        smtpd_tls_chain_files = ["/var/lib/acme/smtp.${domain}/full.pem"];
 
         smtpd_tls_session_cache_database = "btree:/var/lib/postfix/data/smtpd_tls_session_cache";
         smtpd_tls_session_cache_timeout = "3600s";
@@ -406,7 +399,7 @@ in {
           inherit (rootCfg.accounts) database;
         };
       in
-        builtins.readFile "${configs}/dovecot.conf";
+        "!include ${configs}/dovecot.conf";
     };
 
     systemd.services."mls-init-mail-database" = {

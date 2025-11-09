@@ -1,24 +1,28 @@
 storage = "sql"
 sql = {
-  driver = "PostgreSQL";
+    driver = "PostgreSQL";
 }
 
-legacy_ssl_ports = { 5223 }
+c2s_direct_tls_ports = { 5223 }
 
 http_max_content_size = 104857600
 http_external_url = "https://xmpp.@domain@/"
-cross_domain_bosh = true
 consider_bosh_secure = true
-cross_domain_websocket = true
 consider_websocket_secure = true
+http_cors_override = {
+    bosh = {
+        enabled = false;
+    };
+    websocket = {
+        enabled = false;
+    };
+}
 
 -- FIXME: Move this to the NixOS config.
 authentication = "http"
 http_auth_url = "http://127.0.0.1:12344"
 
 welcome_message = "Hello $user! Please visit https://@domain@/private/ for information on this service. Use your login (without domain) and password."
-
-proxy65_ports = { 7777 }
 
 archive_expires_after = "never"
 muc_log_by_default = true
@@ -32,18 +36,19 @@ http_upload_external_file_size_limit = 104857600
 turn_external_host = "turn.@domain@"
 turn_external_secret = "@turnSecret@"
 
+proxy65_ports = { 7777 }
+
 contact_info = {
-  abuse = { "mailto:abuse@@domain@" };
-  admin = { "mailto:admin@@domain@", "xmpp:admin@@domain@" };
+    abuse = { "mailto:abuse@@domain@" };
+    admin = { "mailto:admin@@domain@", "xmpp:admin@@domain@" };
 }
 
 Component "conference.@domain@" "muc"
-  max_history_messages = 50
-  modules_enabled = {
-    "muc_mam";
-    "http_muc_log";
-    "vcard_muc";
-  }
+    max_history_messages = 50
+    modules_enabled = {
+        "muc_mam";
+        "http_muc_log";
+    }
 
 Component "proxy65.@domain@" "proxy65"
 

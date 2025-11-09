@@ -9,6 +9,10 @@ with lib; let
   rootCfg = config.mylittleserver;
 
   inherit (rootCfg) domain;
+
+  # FIXME: upstream to Nixpkgs.
+  pam_pgsql = pkgs.callPackage ./pam_pgsql.nix {};
+
 in {
   options = {
     mylittleserver = {
@@ -73,7 +77,7 @@ in {
           inherit domain;
           inherit (rootCfg.accounts) database;
         };
-        clause = svc: "${svc} required ${pkgs.pam_pgsql}/lib/security/pam_pgsql.so config_file=${confFile}";
+        clause = svc: "${svc} required ${pam_pgsql}/lib/security/pam_pgsql.so config_file=${confFile}";
         svcs = ["auth" "account" "password"];
       in
         concatMapStringsSep "\n" clause svcs;

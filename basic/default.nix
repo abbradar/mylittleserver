@@ -47,7 +47,7 @@ with lib; let
   mailuser = pkgs.writers.writeBashBin "mailuser" ''
     export PATH=${escapeShellArg mailuserBins}
     database=${escapeShellArg cfg.accounts.database}
-    ${builtins.readFile ./mailuser.sh}
+    source ${./mailuser.sh}
   '';
 in {
   options = {

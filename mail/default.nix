@@ -14,8 +14,6 @@ with lib; let
 
   dkimPublicKey = replaceStrings ["\n"] [""] cfg.dkim.publicKey;
 
-  replaceVarsFiles = pkgs.callPackage ../replace-vars-files.nix {};
-
   sieveBin = pkgs.symlinkJoin {
     name = "sieve-bin";
     paths = [
@@ -148,6 +146,7 @@ in {
     services.postfix = let
       commonSubmissionOptions = {
         syslog_name = "postfix/submission";
+        smtpd_sasl_auth_enable = "yes";
         smtpd_helo_restrictions = "";
         smtpd_client_restrictions = "$mua_client_restrictions";
         smtpd_sender_restrictions = "$mua_sender_restrictions";
@@ -189,10 +188,7 @@ in {
             (opt + "=" + val)
           ];
         in
-          concatLists (mapAttrsToList mkKeyVal (commonSubmissionOptions
-            // {
-              smtpd_sasl_auth_enable = "yes";
-            }));
+          concatLists (mapAttrsToList mkKeyVal commonSubmissionOptions);
       };
 
       settings.main = let
@@ -209,6 +205,7 @@ in {
         mydestination = [];
         mynetworks_style = "host";
         virtual_mailbox_domains = [domain];
+        alias_maps = [];
         virtual_alias_maps = ["pgsql:${replaceDatabase ./postfix/alias_maps.cf}"];
         smtpd_sender_login_maps = ["pgsql:${replaceDatabase ./postfix/login_maps.cf}"];
         virtual_mailbox_maps = ["pgsql:${replaceDatabase ./postfix/recipient_maps.cf}"];
@@ -218,8 +215,6 @@ in {
         # Encryption (server-side)
         smtpd_tls_mandatory_ciphers = "high";
         smtpd_tls_mandatory_protocols = ["!SSLv2" "!SSLv3"];
-        # This may not really be 1024 -- just a historical wart in the name
-        smtpd_tls_dh1024_param_file = "/var/lib/dhparams/postfix.pem";
         smtpd_tls_chain_files = ["/var/lib/acme/smtp.${domain}/full.pem"];
 
         smtpd_tls_session_cache_database = "btree:/var/lib/postfix/data/smtpd_tls_session_cache";
@@ -393,12 +388,14 @@ in {
       };
 
       extraConfig = let
-        configs = replaceVarsFiles ./dovecot {
-          inherit domain sieveBin;
-          inherit (cfg) dataDir;
+        dovecotSqlConf = pkgs.replaceVars ./dovecot/dovecot-sql.conf.ext {
           inherit (rootCfg.accounts) database;
         };
-      in "!include ${configs}/dovecot.conf";
+        dovecotConf = pkgs.replaceVars ./dovecot/dovecot.conf {
+          inherit domain sieveBin dovecotSqlConf;
+          inherit (cfg) dataDir;
+        };
+      in "!include ${dovecotConf}";
     };
 
     systemd.services."mls-init-mail-database" = {
@@ -455,11 +452,6 @@ in {
           systemctl reload postfix
         '';
       };
-    };
-
-    security.dhparams = {
-      enable = true;
-      params.postfix = {};
     };
 
     systemd.tmpfiles.rules = [

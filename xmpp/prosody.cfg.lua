@@ -1,6 +1,7 @@
 storage = "sql"
 sql = {
     driver = "PostgreSQL";
+    database = "prosody";
 }
 
 c2s_direct_tls_ports = { 5223 }

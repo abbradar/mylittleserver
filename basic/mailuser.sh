@@ -32,7 +32,7 @@ shift $(($OPTIND - 1))
 user="$1" && shift && [ -n "$user" ] || usage
 shift && usage || true
 
-passwd="$(mkpasswd -m sha-512 $mkpasswd_opts | sed 's/^{.*}//')"
+passwd="$(mkpasswd -m bcrypt $mkpasswd_opts | sed 's/^{.*}//')"
 
 psql "$database" -c """
 UPDATE users SET password='$passwd', enabled=$is_enabled WHERE name='$user';

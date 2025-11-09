@@ -198,7 +198,7 @@ in {
           };
       in {
         # Debugging
-        soft_bounce = true;
+        # soft_bounce = true;
 
         # Core things
         myhostname = "smtp.${domain}";

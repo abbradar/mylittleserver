@@ -66,8 +66,9 @@ async def user_exists_route(request):
 
 
 async def set_password_route(request):
-    user = request.query.get("user")
-    new_password = request.query.get("pass")
+    data = await request.post()
+    user = data.get("user")
+    new_password = data.get("pass")
     if not user or not new_password:
         raise web.HTTPBadRequest()
 

@@ -355,7 +355,7 @@ in {
 
       workers = {
         controller = {
-          includes = ["$CONFDIR/worker-controller.inc"];
+          # Restrict access to the controller.
           bindSockets = [
             {
               socket = "/run/rspamd/controller.sock";

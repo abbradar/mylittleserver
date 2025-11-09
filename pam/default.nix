@@ -69,8 +69,7 @@ in {
       ];
 
       security.pam.services.mylittleserver.text = let
-        confFile = pkgs.substituteAll {
-          src = ./pam_pgsql.conf;
+        confFile = pkgs.replaceVars ./pam_pgsql.conf {
           inherit domain;
           inherit (rootCfg.accounts) database;
         };

@@ -1,4 +1,4 @@
-{mkPoetry2Nix}: {
+{
   config,
   lib,
   pkgs,
@@ -131,12 +131,15 @@ in {
       admins = ["admin@${domain}"];
       # We set the necessary options by ourselves.
       xmppComplianceSuite = false;
-      extraConfig = builtins.readFile (pkgs.substituteAll {
-        src = ./prosody.cfg.lua;
-        inherit domain;
-        uploadSecret = cfg.upload.secret;
-        turnSecret = config.mylittleserver.turn.secret;
-      });
+      extraConfig = let
+        config = pkgs.replaceVars ./prosody.cfg.lua {
+          inherit domain;
+          uploadSecret = cfg.upload.secret;
+          turnSecret = config.mylittleserver.turn.secret;
+        };
+      in ''
+        Include "${config}"
+      '';
       ssl = {
         # We can't use a certificate for the xmpp. subdomain:
         # https://dev.gajim.org/gajim/gajim/-/issues/7253
@@ -172,10 +175,10 @@ in {
           enableACME = true;
           # We set Host to the XMPP server host -- it's needed for Prosody.
           locations = {
-            "/".root = pkgs.substituteAllFiles {
-              src = ./conversejs;
-              files = ["index.html"];
-              inherit domain;
+            "/".root = pkgs.replaceVarsWith {
+              src = ./conversejs/index.html;
+              replacements = {inherit domain;};
+              dir = ".";
             };
             "/upload/" = {
               alias = "${cfg.upload.dir}/";
@@ -274,10 +277,10 @@ in {
     };
 
     services.postgresql = {
-      ensureDatabases = [cfg.database];
+      ensureDatabases = ["prosody"];
       ensureUsers = [
         {
-          name = cfg.database;
+          name = "prosody";
           ensureDBOwnership = true;
         }
         {

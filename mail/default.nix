@@ -96,6 +96,7 @@ in {
     networking.firewall.allowedTCPPorts = [
       25 # SMTP
       587 # SMTP submission
+      465 # SMTPS submission
       143 # IMAP
       993 # IMAPS
       4190 # Sieve
@@ -145,12 +146,18 @@ in {
     };
 
     services.postfix = let
-      configs = replaceVarsFiles ./postfix {
-        inherit domain;
-        inherit (rootCfg.accounts) database;
+      commonSubmissionOptions = {
+        syslog_name = "postfix/submission";
+        smtpd_helo_restrictions = "";
+        smtpd_client_restrictions = "$mua_client_restrictions";
+        smtpd_sender_restrictions = "$mua_sender_restrictions";
+        smtpd_recipient_restrictions = "$mua_recipient_restrictions";
+        smtpd_data_restrictions = "";
       };
     in {
       enable = true;
+      enableSubmission = true;
+      enableSubmissions = true;
 
       hostname = "smtp.${domain}";
       inherit domain;
@@ -175,11 +182,158 @@ in {
         };
       };
 
-      extraConfig = ''
-        message_size_limit = ${toString (cfg.maxSizeMb * 1024 * 1024)}
-        ${builtins.readFile "${configs}/main.cf"}
-      '';
-      extraMasterConf = builtins.readFile ./postfix/master.cf;
+      submissionOptions = commonSubmissionOptions;
+      submissionsOptions = commonSubmissionOptions;
+
+      # For Roundcube, no TLS required.
+      settings.master."127.0.0.1:588" = {
+        type = "inet";
+        private = false;
+        command = "smtpd";
+        args = let
+          mkKeyVal = opt: val: [
+            "-o"
+            (opt + "=" + val)
+          ];
+        in
+          concatLists (mapAttrsToList mkKeyVal (commonSubmissionOptions
+            // {
+              smtpd_sasl_auth_enable = true;
+            }));
+      };
+
+      settings.main = let
+        replaceDatabase = maps:
+          pkgs.replaceVars maps {
+            inherit (rootCfg.accounts) database;
+          };
+      in {
+        # Debugging
+        soft_bounce = true;
+
+        # Core things
+        virtual_mailbox_domains = [domain];
+        virtual_alias_maps = ["pgsql:${replaceDatabase maps}"];
+        smtpd_sender_login_maps = ["pgsql:${replaceDatabase ./postfix/login_maps.cf}"];
+        virtual_mailbox_maps = ["pgsql:${replaceDatabase ./postfix/recipient_maps.cf}"];
+        header_checks = let
+          checks = pkgs.replaceVars ./postfix/header_checks.cf {
+            inherit domain;
+          };
+        in ["pcre:${checks}"];
+        virtual_transport = "lmtp:unix:/run/dovecot2/lmtp";
+
+        # Encryption (server-side)
+        smtpd_tls_mandatory_ciphers = "high";
+        smtpd_tls_mandatory_protocols = ["!SSLv2" "!SSLv3"];
+        # This may not really be 1024 -- just a historical wart in the name
+        smtpd_tls_dh1024_param_file = "/var/lib/dhparams/postfix.pem";
+
+        smtpd_tls_session_cache_database = "btree:/var/lib/postfix/data/smtpd_tls_session_cache";
+        smtpd_tls_session_cache_timeout = "3600s";
+
+        smtpd_tls_received_header = true;
+
+        # encryption (client-side)
+        smtp_tls_mandatory_ciphers = "high";
+        smtp_tls_mandatory_protocols = ["!SSLv2" "!SSLv3"];
+
+        smtp_tls_session_cache_database = "btree:/var/lib/postfix/data/smtp_tls_session_cache";
+        smtp_tls_session_cache_timeout = "600s";
+
+        # Authentication
+        smtpd_sasl_security_options = ["noanonymous"];
+        smtpd_sasl_type = "dovecot";
+        smtpd_sasl_path = "/run/dovecot2/auth-postfix";
+
+        # Slow spammers down
+        smtpd_helo_required = true;
+        smtpd_delay_reject = true;
+        disable_vrfy_command = true;
+
+        # Sub-addressing via +
+        recipient_delimiter = "+";
+
+        # Admin-only hash
+        smtpd_restriction_classes = "restrict_admin";
+        restrict_admin = [
+          "check_sender_access hash:/etc/postfix/restrict_admin"
+          "reject"
+        ];
+
+        # Restrictions
+        smtpd_client_restrictions = [
+          # Check DNS PTR
+          # (fails for e.g. bakabt.me)
+          # "reject_unknown_client_hostname",
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        smtpd_helo_restrictions = [
+          # Check hostname validity
+          "reject_invalid_helo_hostname"
+          "reject_non_fqdn_helo_hostname"
+          # DNS check
+          "reject_unknown_helo_hostname"
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        smtpd_sender_restrictions = [
+          # Check hostname validity
+          "reject_non_fqdn_sender"
+          # Deny sending from "us"
+          "check_sender_access hash:/etc/postfix/sender_access"
+          # Check DNS reachability
+          "reject_unknown_sender_domain"
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        smtpd_recipient_restrictions = [
+          # Check hostname validity
+          "reject_non_fqdn_recipient"
+          # Deny if not for local for this server
+          "reject_unauth_destination"
+          # Deny if recipient does not exist on the server
+          "reject_unknown_recipient_domain"
+          "reject_unlisted_recipient"
+          # Access rights check
+          "check_recipient_access hash:/etc/postfix/recipient_access"
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        smtpd_data_restrictions = [
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        # For submission.
+        mua_client_restrictions = [
+          # Allow if authenticated
+          "permit_sasl_authenticated"
+          "reject"
+        ];
+
+        mua_sender_restrictions = [
+          # Deny sending from not owned local address
+          "reject_sender_login_mismatch"
+        ];
+
+        mua_recipient_restrictions = [
+          # DNS check
+          "reject_unknown_recipient_domain"
+          # Check hostname validity
+          "reject_non_fqdn_recipient"
+          # Access rights check
+          "check_recipient_access hash:/etc/postfix/recipient_access"
+        ];
+
+        # Limits
+        message_size_limit = cfg.maxSizeMb * 1024 * 1024;
+      };
     };
 
     services.postsrsd = {

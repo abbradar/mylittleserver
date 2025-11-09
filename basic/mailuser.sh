@@ -8,7 +8,7 @@ usage() {
 }
 
 is_enabled="true"
-mkpasswd_opts=""
+mkpasswd_opts=()
 
 while getopts ":eds" arg; do
   case "$arg" in
@@ -19,7 +19,7 @@ while getopts ":eds" arg; do
       is_enabled="false"
       ;;
     s)
-      mkpasswd_opts="$mkpasswd_opts -s"
+      mkpasswd_opts+=("-s")
       ;;
     *)
       usage
@@ -32,7 +32,7 @@ shift $(($OPTIND - 1))
 user="$1" && shift && [ -n "$user" ] || usage
 shift && usage || true
 
-passwd="$(mkpasswd -m sha-512 $mkpasswd_opts | sed 's/^{.*}//')"
+passwd="$(mkpasswd -m bcrypt "${mkpasswd_opts[@]}" | sed 's/^{.*}//')"
 
 psql "$database" -c """
 UPDATE users SET password='$passwd', enabled=$is_enabled WHERE name='$user';

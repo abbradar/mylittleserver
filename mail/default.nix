@@ -398,8 +398,7 @@ in {
           inherit (cfg) dataDir;
           inherit (rootCfg.accounts) database;
         };
-      in
-        "!include ${configs}/dovecot.conf";
+      in "!include ${configs}/dovecot.conf";
     };
 
     systemd.services."mls-init-mail-database" = {

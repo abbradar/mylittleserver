@@ -12,7 +12,6 @@ with lib; let
 
   # FIXME: upstream to Nixpkgs.
   pam_pgsql = pkgs.callPackage ./pam_pgsql.nix {};
-
 in {
   options = {
     mylittleserver = {

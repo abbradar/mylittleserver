@@ -1,20 +1,35 @@
-{ config, lib, pkgs, ... }:
-
-with lib;
-
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 # We use `smtp.` and `imap.` so that clients which randomly guess
 # configurations would have a better chance.
-
-let
+with lib; let
   rootCfg = config.mylittleserver;
   cfg = config.mylittleserver.mail;
 
   inherit (rootCfg) domain;
 
-  roundcubeDb = config.services.roundcube.database.dbname;
-
   dkimPublicKey = replaceStrings ["\n"] [""] cfg.dkim.publicKey;
 
+  sieveBin = pkgs.symlinkJoin {
+    name = "sieve-bin";
+    paths = [
+      # Runs as `dovecot2-mail`; should have the necessary permissions.
+      (pkgs.writeScriptBin "learn-spam" ''
+        #!${pkgs.stdenv.shell}
+        user="$1"
+        exec ${pkgs.rspamd}/bin/rspamc -h /run/rspamd/controller.sock -u "$user" learn_spam
+      '')
+      (pkgs.writeScriptBin "learn-ham" ''
+        #!${pkgs.stdenv.shell}
+        user="$1"
+        exec ${pkgs.rspamd}/bin/rspamc -h /run/rspamd/controller.sock -u "$user" learn_ham
+      '')
+    ];
+  };
 in {
   options = {
     mylittleserver.mail = {
@@ -79,6 +94,7 @@ in {
     networking.firewall.allowedTCPPorts = [
       25 # SMTP
       587 # SMTP submission
+      465 # SMTPS submission
       143 # IMAP
       993 # IMAPS
       4190 # Sieve
@@ -87,13 +103,14 @@ in {
     environment.systemPackages = with pkgs; [
       # To filter mail queue.
       jq
+      # Dovecot modules
+      dovecot_pigeonhole
     ];
 
     services.nginx.virtualHosts = {
       ${domain}.locations = {
         "= /.well-known/autoconfig/mail/config-v1.1.xml" = {
-          alias = pkgs.substituteAll {
-            src = ./autoconfig.xml;
+          alias = pkgs.replaceVars ./autoconfig.xml {
             inherit (rootCfg) domain;
             extra = "";
           };
@@ -115,63 +132,201 @@ in {
     services.roundcube = {
       enable = true;
       hostName = "mail.${domain}";
-      plugins = [ "managesieve" ];
+      plugins = ["managesieve"];
       maxAttachmentSize = cfg.maxSizeMb;
+      database.dbname = "roundcube";
       extraConfig = ''
         $config['username_domain'] = '${domain}';
         $config['username_domain_forced'] = true;
-        # Use a lo-bound SMTP with no TLS requirement.
+        # Use an lo-bound SMTP with no TLS requirement.
         $config['smtp_server'] = '127.0.0.1:588';
       '';
     };
 
     services.postfix = let
-      configs = pkgs.substituteAllFiles {
-        src = ./postfix;
-        files = [ "main.cf" "alias_maps.cf" "login_maps.cf" "recipient_maps.cf" "header_checks.cf" ];
-
-        inherit domain;
-        inherit (rootCfg.accounts) database;
+      commonSubmissionOptions = {
+        syslog_name = "postfix/submission";
+        smtpd_sasl_auth_enable = "yes";
+        smtpd_helo_restrictions = "";
+        smtpd_client_restrictions = "$mua_client_restrictions";
+        smtpd_sender_restrictions = "$mua_sender_restrictions";
+        smtpd_recipient_restrictions = "$mua_recipient_restrictions";
+        smtpd_data_restrictions = "";
       };
     in {
       enable = true;
+      enableSubmission = true;
+      enableSubmissions = true;
 
-      hostname = "smtp.${domain}";
-      inherit domain;
-      destination = [ ];
-      networksStyle = "host";
       postmasterAlias = "";
 
-      sslCert = "/var/lib/acme/smtp.${domain}/full.pem";
-      sslKey = "/var/lib/acme/smtp.${domain}/full.pem";
-
       mapFiles = {
-        "sender_access" = pkgs.substituteAll {
-          src = ./postfix/sender_access.cf;
+        "sender_access" = pkgs.replaceVars ./postfix/sender_access.cf {
           inherit domain;
         };
 
-        "recipient_access" = pkgs.substituteAll {
-          src = ./postfix/recipient_access.cf;
+        "recipient_access" = pkgs.replaceVars ./postfix/recipient_access.cf {
           inherit domain;
         };
 
-        "restrict_admin" = pkgs.substituteAll {
-          src = ./postfix/restrict_admin.cf;
+        "restrict_admin" = pkgs.replaceVars ./postfix/restrict_admin.cf {
           inherit domain;
         };
       };
 
-      extraConfig = ''
-        message_size_limit = ${toString (cfg.maxSizeMb * 1024 * 1024)}
-        ${builtins.readFile "${configs}/main.cf"}
-      '';
-      extraMasterConf = builtins.readFile ./postfix/master.cf;
+      submissionOptions = commonSubmissionOptions;
+      submissionsOptions = commonSubmissionOptions;
+
+      # For Roundcube, no TLS required.
+      settings.master."127.0.0.1:588" = {
+        type = "inet";
+        private = false;
+        command = "smtpd";
+        args = let
+          mkKeyVal = opt: val: [
+            "-o"
+            (opt + "=" + val)
+          ];
+        in
+          concatLists (mapAttrsToList mkKeyVal commonSubmissionOptions);
+      };
+
+      settings.main = let
+        replaceDatabase = maps:
+          pkgs.replaceVars maps {
+            inherit (rootCfg.accounts) database;
+          };
+      in {
+        # Debugging
+        soft_bounce = true;
+
+        # Core things
+        myhostname = "smtp.${domain}";
+        mydestination = [];
+        mynetworks_style = "host";
+        virtual_mailbox_domains = [domain];
+        alias_maps = [];
+        virtual_alias_maps = ["pgsql:${replaceDatabase ./postfix/alias_maps.cf}"];
+        smtpd_sender_login_maps = ["pgsql:${replaceDatabase ./postfix/login_maps.cf}"];
+        virtual_mailbox_maps = ["pgsql:${replaceDatabase ./postfix/recipient_maps.cf}"];
+        header_checks = ["pcre:${./postfix/header_checks.cf}"];
+        virtual_transport = "lmtp:unix:/run/dovecot2/lmtp";
+
+        # Encryption (server-side)
+        smtpd_tls_mandatory_ciphers = "high";
+        smtpd_tls_mandatory_protocols = ["!SSLv2" "!SSLv3"];
+        smtpd_tls_chain_files = ["/var/lib/acme/smtp.${domain}/full.pem"];
+
+        smtpd_tls_session_cache_database = "btree:/var/lib/postfix/data/smtpd_tls_session_cache";
+        smtpd_tls_session_cache_timeout = "3600s";
+
+        smtpd_tls_received_header = true;
+
+        # encryption (client-side)
+        smtp_tls_mandatory_ciphers = "high";
+        smtp_tls_mandatory_protocols = ["!SSLv2" "!SSLv3"];
+
+        smtp_tls_session_cache_database = "btree:/var/lib/postfix/data/smtp_tls_session_cache";
+        smtp_tls_session_cache_timeout = "600s";
+
+        # Authentication
+        smtpd_sasl_security_options = ["noanonymous"];
+        smtpd_sasl_type = "dovecot";
+        smtpd_sasl_path = "/run/dovecot2/auth-postfix";
+
+        # Slow spammers down
+        smtpd_helo_required = true;
+        smtpd_delay_reject = true;
+        disable_vrfy_command = true;
+
+        # Sub-addressing via +
+        recipient_delimiter = "+";
+
+        # Admin-only hash
+        smtpd_restriction_classes = "restrict_admin";
+        restrict_admin = [
+          "check_sender_access hash:/etc/postfix/restrict_admin"
+          "reject"
+        ];
+
+        # Restrictions
+        smtpd_client_restrictions = [
+          # Check DNS PTR
+          # (fails for e.g. bakabt.me)
+          # "reject_unknown_client_hostname",
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        smtpd_helo_restrictions = [
+          # Check hostname validity
+          "reject_invalid_helo_hostname"
+          "reject_non_fqdn_helo_hostname"
+          # DNS check
+          "reject_unknown_helo_hostname"
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        smtpd_sender_restrictions = [
+          # Check hostname validity
+          "reject_non_fqdn_sender"
+          # Deny sending from "us"
+          "check_sender_access hash:/etc/postfix/sender_access"
+          # Check DNS reachability
+          "reject_unknown_sender_domain"
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        smtpd_recipient_restrictions = [
+          # Check hostname validity
+          "reject_non_fqdn_recipient"
+          # Deny if not for local for this server
+          "reject_unauth_destination"
+          # Deny if recipient does not exist on the server
+          "reject_unknown_recipient_domain"
+          "reject_unlisted_recipient"
+          # Access rights check
+          "check_recipient_access hash:/etc/postfix/recipient_access"
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        smtpd_data_restrictions = [
+          # Reject pipelining
+          "reject_unauth_pipelining"
+        ];
+
+        # For submission.
+        mua_client_restrictions = [
+          # Allow if authenticated
+          "permit_sasl_authenticated"
+          "reject"
+        ];
+
+        mua_sender_restrictions = [
+          # Deny sending from not owned local address
+          "reject_sender_login_mismatch"
+        ];
+
+        mua_recipient_restrictions = [
+          # DNS check
+          "reject_unknown_recipient_domain"
+          # Check hostname validity
+          "reject_non_fqdn_recipient"
+          # Access rights check
+          "check_recipient_access hash:/etc/postfix/recipient_access"
+        ];
+
+        # Limits
+        message_size_limit = cfg.maxSizeMb * 1024 * 1024;
+      };
     };
 
     services.postsrsd = {
       enable = true;
-      inherit domain;
+      settings.domains = [domain];
     };
 
     services.redis.servers.rspamd = {
@@ -186,8 +341,7 @@ in {
       enable = true;
       # debug = true;
       locals = {
-        "dkim_signing.conf".source = pkgs.substituteAll {
-          src = ./rspamd/dkim_signing.conf;
+        "dkim_signing.conf".source = pkgs.replaceVars ./rspamd/dkim_signing.conf {
           inherit domain;
           dkimPrivateKeyPath = cfg.dkim.privateKeyPath;
         };
@@ -201,9 +355,10 @@ in {
 
       workers = {
         controller = {
-          includes = [ "$CONFDIR/worker-controller.inc" ];
+          # Restrict access to the controller.
           bindSockets = [
-            { socket = "/run/rspamd/controller.sock";
+            {
+              socket = "/run/rspamd/controller.sock";
               mode = "0660";
             }
           ];
@@ -215,11 +370,9 @@ in {
 
     services.dovecot2 = {
       enable = true;
-      modules = with pkgs; [ dovecot_pigeonhole ];
-
       enablePop3 = false;
       enableLmtp = true;
-      protocols = [ "sieve" ];
+      protocols = ["sieve"];
       mailLocation = "mdbox:%h/mdbox";
       enablePAM = false;
       sslCACert = "/var/lib/acme/imap.${domain}/full.pem";
@@ -235,54 +388,38 @@ in {
       };
 
       extraConfig = let
-        configs = pkgs.substituteAllFiles {
-          src = ./dovecot;
-          files = [ "dovecot.conf" "dovecot-sql.conf.ext" ];
-
-          inherit domain;
-          inherit (cfg) dataDir;
+        dovecotSqlConf = pkgs.replaceVars ./dovecot/dovecot-sql.conf.ext {
           inherit (rootCfg.accounts) database;
-          sieveBin = pkgs.symlinkJoin {
-            name = "sieve-bin";
-            paths = [
-              # Runs as `dovecot2-mail`; should have the necessary permissions.
-              (pkgs.writeScriptBin "learn-spam" ''
-                #!${pkgs.stdenv.shell}
-                user="$1"
-                exec ${pkgs.rspamd}/bin/rspamc -h /run/rspamd/controller.sock -u "$user" learn_spam
-              '')
-              (pkgs.writeScriptBin "learn-ham" ''
-                #!${pkgs.stdenv.shell}
-                user="$1"
-                exec ${pkgs.rspamd}/bin/rspamc -h /run/rspamd/controller.sock -u "$user" learn_ham
-              '')
-            ];
-          };
         };
-      in builtins.readFile "${configs}/dovecot.conf";
+        dovecotConf = pkgs.replaceVars ./dovecot/dovecot.conf {
+          inherit domain sieveBin dovecotSqlConf;
+          inherit (cfg) dataDir;
+        };
+      in "!include ${dovecotConf}";
     };
 
     systemd.services."mls-init-mail-database" = {
       description = "Initialize MyLittleServer's mail database.";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "postgresql.service" "mls-init-basic-database.service" ];
-      before = [ "postfix.service" "dovecot2.service" ];
-      path = [ config.services.postgresql.package ];
+      wantedBy = ["multi-user.target"];
+      after = ["postgresql.service" "mls-init-basic-database.service"];
+      before = ["postfix.service" "dovecot2.service"];
+      path = [config.services.postgresql.package];
       serviceConfig = {
         Type = "oneshot";
         User = "postgres";
         Group = "postgres";
       };
-      script = ''
-        psql ${escapeShellArg rootCfg.accounts.database} < ${pkgs.substituteAll {
-          src = ./init.sql;
+      script = let
+        script = pkgs.replaceVars ./init.sql {
           inherit domain;
-        }}
+        };
+      in ''
+        psql ${escapeShellArg rootCfg.accounts.database} < ${script}
       '';
     };
 
     services.postgresql = {
-      ensureDatabases = [ roundcubeDb ];
+      ensureDatabases = ["roundcube"];
       ensureUsers = [
         {
           name = "postfix";
@@ -292,7 +429,7 @@ in {
         }
         {
           name = "roundcube";
-          ensurePermissions = { "DATABASE \"${roundcubeDb}\"" = "ALL PRIVILEGES"; };
+          ensureDBOwnership = true;
         }
       ];
     };
@@ -317,11 +454,6 @@ in {
       };
     };
 
-    security.dhparams = {
-      enable = true;
-      params.postfix = {};
-    };
-
     systemd.tmpfiles.rules = [
       "d '${cfg.dataDir}' 0700 dovecot2-mail dovecot2-mail - -"
     ];
@@ -331,7 +463,7 @@ in {
         dovecot2-mail = {
           group = "dovecot2-mail";
           isSystemUser = true;
-          extraGroups = [ "rspamd" ];
+          extraGroups = ["rspamd"];
         };
       };
       groups = {

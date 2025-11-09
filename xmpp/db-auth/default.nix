@@ -1,8 +1,23 @@
-{ poetry2nix, aiohttp, asyncpg }:
+{
+  buildPythonApplication,
+  setuptools,
+  aiohttp,
+  asyncpg,
+  libpass,
+  bcrypt,
+}:
+buildPythonApplication {
+  pname = "db-auth";
+  version = "1.0";
+  pyproject = true;
 
-poetry2nix.mkPoetryApplication {
-  projectDir = ./.;
-  overrides = poetry2nix.defaultPoetryOverrides.extend (final: prev: {
-    inherit aiohttp asyncpg;
-  });
+  src = ./.;
+
+  build-system = [setuptools];
+  dependencies = [
+    aiohttp
+    asyncpg
+    libpass
+    bcrypt
+  ];
 }

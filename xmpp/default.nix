@@ -1,9 +1,10 @@
-{ mkPoetry2Nix }:
-{ config, lib, pkgs, ... }:
-
-with lib;
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+with lib; let
   rootCfg = config.mylittleserver;
   cfg = config.mylittleserver.xmpp;
 
@@ -24,10 +25,7 @@ let
     "pubsub.${domain}"
   ];
 
-  dbAuth = pkgs.python3.pkgs.callPackage ./db-auth {
-    poetry2nix = mkPoetry2Nix { inherit pkgs; };
-  };
-
+  dbAuth = pkgs.python3.pkgs.callPackage ./db-auth {};
 in {
   options = {
     mylittleserver.xmpp = {
@@ -56,14 +54,6 @@ in {
             HTTP upload static auth secret.
           '';
         };
-      };
-
-      database = mkOption {
-        type = types.str;
-        default = "prosody";
-        description = ''
-          Prosody PostgreSQL database.
-        '';
       };
     };
   };
@@ -105,12 +95,13 @@ in {
     services.prosody = {
       enable = true;
       package = pkgs.prosody.override {
-        withOnlyInstalledCommunityModules = [
-          "auth_http"
-          "http_muc_log"
-          "vcard_muc"
-        ] ++ prosodyExtra;
-        withExtraLuaPackages = libs: with libs; [ luadbi-postgresql ];
+        withOnlyInstalledCommunityModules =
+          [
+            "auth_http"
+            "http_muc_log"
+          ]
+          ++ prosodyExtra;
+        withExtraLuaPackages = libs: with libs; [luadbi-postgresql];
       };
       modules = {
         legacyauth = false;
@@ -122,26 +113,32 @@ in {
         websocket = true;
         cloud_notify = true;
         bookmarks = true;
+        # Use as a Component.
+        proxy65 = false;
       };
-      extraModules = [
-        # Official modules
-        "lastactivity"
-        "vcard4"
-        "vcard_legacy"
-        "http"
-        "csi_simple"
-        "turn_external"
-      ] ++ prosodyExtra;
-      admins = [ "admin@${domain}" ];
+      extraModules =
+        [
+          # Official modules
+          "lastactivity"
+          "vcard4"
+          "vcard_legacy"
+          "http"
+          "csi_simple"
+          "turn_external"
+        ]
+        ++ prosodyExtra;
+      admins = ["admin@${domain}"];
       # We set the necessary options by ourselves.
       xmppComplianceSuite = false;
-      extraConfig = builtins.readFile (pkgs.substituteAll {
-        src = ./prosody.cfg.lua;
-        inherit domain;
-        inherit (cfg) database;
-        uploadSecret = cfg.upload.secret;
-        turnSecret = config.mylittleserver.turn.secret;
-      });
+      extraConfig = let
+        luaCfg = pkgs.replaceVars ./prosody.cfg.lua {
+          inherit domain;
+          uploadSecret = cfg.upload.secret;
+          turnSecret = config.mylittleserver.turn.secret;
+        };
+      in ''
+        Include "${luaCfg}"
+      '';
       ssl = {
         # We can't use a certificate for the xmpp. subdomain:
         # https://dev.gajim.org/gajim/gajim/-/issues/7253
@@ -151,10 +148,11 @@ in {
           dhparam = "/var/lib/dhparams/prosody.pem";
         };
       };
-      httpInterfaces = [ "127.0.0.1" ];
-      httpsPorts = [ ];
+      httpInterfaces = ["127.0.0.1"];
+      httpsPorts = [];
       s2sSecureAuth = true;
-      authentication = "http";
+      # FIXME: upstream a NixOS patch to allow this value.
+      # authentication = "http";
       virtualHosts.${domain} = {
         inherit domain;
         enabled = true;
@@ -176,10 +174,10 @@ in {
           enableACME = true;
           # We set Host to the XMPP server host -- it's needed for Prosody.
           locations = {
-            "/".root = pkgs.substituteAllFiles {
-              src = ./conversejs;
-              files = [ "index.html" ];
-              inherit domain;
+            "/".root = pkgs.replaceVarsWith {
+              src = ./conversejs/index.html;
+              replacements = {inherit domain;};
+              dir = ".";
             };
             "/upload/" = {
               alias = "${cfg.upload.dir}/";
@@ -232,23 +230,25 @@ in {
                 auth_pam_service_name "mylittleserver";
               '';
             };
-         };
-       };
+          };
+        };
       }
 
-      (listToAttrs (map (host: nameValuePair host {
-        onlySSL = false;
-        forceSSL = false;
-        locations."^~ /.well-known/acme-challenge/".root = config.security.acme.certs.${domain}.webroot;
-      }) xmppDomains))
+      (listToAttrs (map (host:
+        nameValuePair host {
+          onlySSL = false;
+          forceSSL = false;
+          locations."^~ /.well-known/acme-challenge/".root = config.security.acme.certs.${domain}.webroot;
+        })
+      xmppDomains))
     ];
 
     systemd.services = {
       "prosody-db-auth" = {
         description = "Responds to authentication requests from Prosody.";
-        wantedBy = [ "multi-user.target" ];
-        before = [ "prosody.service" ];
-        after = [ "network.target" ];
+        wantedBy = ["multi-user.target"];
+        before = ["prosody.service"];
+        after = ["network.target"];
         serviceConfig = {
           User = "db-auth";
           Group = "db-auth";
@@ -260,27 +260,27 @@ in {
 
       "mls-init-xmpp-database" = {
         description = "Initialize MyLittleServer's XMPP database.";
-        wantedBy = [ "multi-user.target" ];
-        after = [ "postgresql.service" "mls-init-basic-database.service" ];
-        before = [ "db-auth.service" "prosody.service" ];
-        path = [ config.services.postgresql.package ];
+        wantedBy = ["multi-user.target"];
+        after = ["postgresql.service" "mls-init-basic-database.service"];
+        before = ["db-auth.service" "prosody.service"];
+        path = [config.services.postgresql.package];
         serviceConfig = {
           Type = "oneshot";
           User = "postgres";
           Group = "postgres";
         };
         script = ''
-          psql ${escapeShellArg cfg.database} < ${./init.sql}
+          psql prosody < ${./init.sql}
         '';
       };
     };
 
     services.postgresql = {
-      ensureDatabases = [ cfg.database ];
+      ensureDatabases = ["prosody"];
       ensureUsers = [
         {
           name = "prosody";
-          ensurePermissions = { "DATABASE \"${cfg.database}\"" = "ALL PRIVILEGES"; };
+          ensureDBOwnership = true;
         }
         {
           name = "db-auth";
@@ -307,8 +307,8 @@ in {
     users = {
       groups.xmpp-ssl = {};
       users = {
-        nginx.extraGroups = [ "prosody-filer" ];
-        prosody.extraGroups = [ "mylittleserver-ssl" ];
+        nginx.extraGroups = ["prosody-filer"];
+        prosody.extraGroups = ["mylittleserver-ssl"];
       };
     };
   };

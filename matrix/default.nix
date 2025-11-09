@@ -1,21 +1,22 @@
-{ lib, config, pkgs, ... }:
-
-with lib;
-
-let
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
+with lib; let
   rootCfg = config.mylittleserver;
   cfg = config.mylittleserver.matrix;
 
   inherit (rootCfg) domain;
 
-   matrixClientDiscover = pkgs.writeText "matrix-client-discover.json" (builtins.toJSON {
-     "m.homeserver"."base_url" = "https://matrix.${domain}";
-   });
+  matrixClientDiscover = pkgs.writeText "matrix-client-discover.json" (builtins.toJSON {
+    "m.homeserver"."base_url" = "https://matrix.${domain}";
+  });
 
-   matrixServerDiscover = pkgs.writeText "matrix-server-discover.json" (builtins.toJSON {
-     "m.server" = "matrix.${domain}:443";
-   });
-
+  matrixServerDiscover = pkgs.writeText "matrix-server-discover.json" (builtins.toJSON {
+    "m.server" = "matrix.${domain}:443";
+  });
 in {
   options = {
     mylittleserver.matrix = {
@@ -89,12 +90,13 @@ in {
 
     services.matrix-synapse = {
       enable = true;
-      plugins = with pkgs.matrix-synapse-plugins; [ matrix-synapse-pam ];
+      plugins = with pkgs.matrix-synapse-plugins; [matrix-synapse-pam];
       withJemalloc = true;
       settings = {
         password_config.localdb_enabled = false;
         password_providers = [
-          { module = "pam_auth_provider.PAMAuthProvider";
+          {
+            module = "pam_auth_provider.PAMAuthProvider";
             config = {
               create_users = true;
               skip_user_check = true;
@@ -119,26 +121,34 @@ in {
           # "turns:turn.${domain}:5349?transport=tcp"
         ];
         turn_shared_secret = config.mylittleserver.turn.secret;
-        listeners = [{
-          port = 8008;
-          bind_addresses = ["127.0.0.1"];
-          type = "http";
-          tls = false;
-          x_forwarded = true;
-          resources = [
-            { names = ["client"]; compress = false; }
-            { names = ["federation"]; compress = false; }
-          ];
-        }];
+        listeners = [
+          {
+            port = 8008;
+            bind_addresses = ["127.0.0.1"];
+            type = "http";
+            tls = false;
+            x_forwarded = true;
+            resources = [
+              {
+                names = ["client"];
+                compress = false;
+              }
+              {
+                names = ["federation"];
+                compress = false;
+              }
+            ];
+          }
+        ];
       };
     };
 
     systemd.services."mls-init-matrix-database" = {
       description = "Initialize MyLittleServer's Matrix database.";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "postgresql.service" "mls-init-basic-database.service" ];
-      before = [ "matrix-synapse.service" ];
-      path = [ config.services.postgresql.package ];
+      wantedBy = ["multi-user.target"];
+      after = ["postgresql.service" "mls-init-basic-database.service"];
+      before = ["matrix-synapse.service"];
+      path = [config.services.postgresql.package];
       serviceConfig = {
         Type = "oneshot";
         User = "postgres";

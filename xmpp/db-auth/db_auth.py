@@ -2,7 +2,7 @@
 
 import argparse
 import re
-import crypt
+from passlib.context import CryptContext
 import asyncio
 from aiohttp import web
 import asyncpg
@@ -13,6 +13,10 @@ def bool_to_reply(b):
 
 
 UPDATE_REGEX = re.compile(r"UPDATE (\d+)")
+
+
+CRYPT_CONTEXT = CryptContext(schemes=["bcrypt", "sha512_crypt"])
+
 
 def parse_update_affected(status):
     match = UPDATE_REGEX.fullmatch(status)
@@ -32,12 +36,13 @@ async def check_password(request):
         raise web.HTTPBadRequest()
 
     async with request.app["pool"].acquire() as conn:
-        row = await conn.fetchrow("SELECT password FROM users WHERE name = $1 AND enabled", user)
+        row = await conn.fetchrow(
+            "SELECT password FROM users WHERE name = $1 AND enabled", user
+        )
         if row is None:
             return False
         password_hash = row["password"]
-        test_hash = crypt.crypt(password, salt=password_hash)
-        return password_hash == test_hash
+        return CRYPT_CONTEXT.verify(password, password_hash)
 
 
 async def check_password_route(request):
@@ -50,7 +55,9 @@ async def user_exists(request):
         raise web.HTTPBadRequest()
 
     async with request.app["pool"].acquire() as conn:
-        row = await conn.fetchrow("SELECT COUNT(*) FROM users WHERE name = $1 AND enabled", user)
+        row = await conn.fetchrow(
+            "SELECT COUNT(*) FROM users WHERE name = $1 AND enabled", user
+        )
         return row[0] > 0
 
 
@@ -65,9 +72,12 @@ async def set_password_route(request):
         raise web.HTTPBadRequest()
 
     async with request.app["pool"].acquire() as conn:
-        salt = crypt.mksalt(method=crypt.METHOD_SHA512)
-        password_hash = crypt.crypt(new_password, salt=salt)
-        ret = await conn.execute("UPDATE users SET password = $2 WHERE name = $1 AND enabled", user, password_hash)
+        password_hash = CRYPT_CONTEXT.hash(new_password)
+        ret = await conn.execute(
+            "UPDATE users SET password = $2 WHERE name = $1 AND enabled",
+            user,
+            password_hash,
+        )
         affected = parse_update_affected(ret)
         if affected == 0:
             raise web.HTTPNotFound(text="User not found")
@@ -77,8 +87,8 @@ async def set_password_route(request):
 
 async def async_main():
     argparser = argparse.ArgumentParser(
-        prog = "db_auth",
-        description = "Web server for authorization via MyLittleServer's users table",
+        prog="db_auth",
+        description="Web server for authorization via MyLittleServer's users table",
     )
     argparser.add_argument("database")
     argparser.add_argument("-u", "--user")

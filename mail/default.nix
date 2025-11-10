@@ -77,7 +77,7 @@ in {
       @ MX 10 smtp.${domain}.
       @ TXT "v=spf1 mx -all"
       mail._domainkey TXT "v=DKIM1; h=sha256; s=email; p=${dkimPublicKey}; t=s"
-      _dmarc TXT "v=DMARC1; p=reject; rua=mailto:dmarc@${domain}; ruf=mailto:dmarc-forensics@${domain}; fo=1"
+      _dmarc TXT "v=DMARC1; p=reject; rua=mailto:dmarc@${domain}; fo=1"
     '';
 
     nixpkgs.overlays = singleton (final: prev: {

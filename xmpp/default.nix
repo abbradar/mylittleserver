@@ -91,7 +91,7 @@ in {
         7777 # SOCKS5 (XMPP file transfer)
       ];
 
-      # db-auth allows one to *reset the user password* with an authenticated HTTP request!
+      # db-auth allows one to *reset the user password* with an unauthenticated HTTP request!
       # Restrict this to prosody user.
       extraCommands = ''
         ip46tables -A OUTPUT -o lo -m owner --uid-owner prosody -p tcp -m tcp --dport 12344 -j ACCEPT

@@ -92,6 +92,8 @@ in {
       enable = true;
       plugins = with pkgs.matrix-synapse-plugins; [matrix-synapse-pam];
       withJemalloc = true;
+      enableRegistrationScript = false;
+
       settings = {
         password_config.localdb_enabled = false;
         password_providers = [
@@ -124,8 +126,8 @@ in {
         listeners = [
           {
             path = "/run/matrix-synapse/http.sock";
+            mode = "666";
             type = "http";
-            tls = false;
             x_forwarded = true;
             resources = [
               {

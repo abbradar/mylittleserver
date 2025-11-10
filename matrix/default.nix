@@ -75,7 +75,7 @@ in {
         enableACME = true;
 
         locations."/" = {
-          proxyPass = "http://127.0.0.1:8008";
+          proxyPass = "http://unix://run/matrix-synapse/http.sock";
           extraConfig = ''
             client_max_body_size ${toString cfg.upload.maxSizeMb}m;
 
@@ -92,6 +92,8 @@ in {
       enable = true;
       plugins = with pkgs.matrix-synapse-plugins; [matrix-synapse-pam];
       withJemalloc = true;
+      enableRegistrationScript = false;
+
       settings = {
         password_config.localdb_enabled = false;
         password_providers = [
@@ -123,18 +125,13 @@ in {
         turn_shared_secret = config.mylittleserver.turn.secret;
         listeners = [
           {
-            port = 8008;
-            bind_addresses = ["127.0.0.1"];
+            path = "/run/matrix-synapse/http.sock";
+            mode = "666";
             type = "http";
-            tls = false;
             x_forwarded = true;
             resources = [
               {
-                names = ["client"];
-                compress = false;
-              }
-              {
-                names = ["federation"];
+                names = ["client" "federation"];
                 compress = false;
               }
             ];

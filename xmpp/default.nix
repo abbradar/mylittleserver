@@ -90,6 +90,20 @@ in {
         5269 # XMPP server
         7777 # SOCKS5 (XMPP file transfer)
       ];
+
+      # db-auth allows one to *reset the user password* with an authenticated HTTP request!
+      # Restrict this to prosody user.
+      extraCommands = ''
+        ip46tables -A OUTPUT -o lo -m owner --uid-owner prosody -p tcp -m tcp --dport 12344 -j ACCEPT
+        ip46tables -A OUTPUT -o lo -m owner --uid-owner root -p tcp -m tcp --dport 12344 -j ACCEPT
+        ip46tables -A OUTPUT -o lo -p tcp -m tcp --dport 12344 -j REJECT
+      '';
+
+      extraStopCommands = ''
+        ip46tables -D OUTPUT -o lo -m owner --uid-owner prosody -p tcp -m tcp --dport 12344 -j ACCEPT 2>/dev/null || true
+        ip46tables -D OUTPUT -o lo -m owner --uid-owner root -p tcp -m tcp --dport 12344 -j ACCEPT 2>/dev/null || true
+        ip46tables -D OUTPUT -o lo -p tcp -m tcp --dport 12344 -j REJECT 2>/dev/null || true
+      '';
     };
 
     services.prosody = {

@@ -181,81 +181,69 @@ in {
       };
     };
 
-    services.nginx.virtualHosts = mkMerge [
-      {
-        "xmpp.${domain}" = {
-          forceSSL = true;
-          enableACME = true;
-          # We set Host to the XMPP server host -- it's needed for Prosody.
-          locations = {
-            "/".root = pkgs.replaceVarsWith {
-              src = ./conversejs/index.html;
-              replacements = {inherit domain;};
-              dir = ".";
-            };
-            "/upload/" = {
-              alias = "${cfg.upload.dir}/";
-              extraConfig = ''
-                proxy_request_buffering off;
-                client_max_body_size ${toString cfg.upload.maxSizeMb}m;
-
-                # To view text files.
-                charset utf-8;
-
-                add_header X-Content-Type-Options nosniff;
-                if ( $request_filename !~* \.(txt|png|jpg|jpeg|avif|gif|webp|pdf|mp3|ogg|m4a|mp4|webm)$ ){
-                  # Nested `add_header` replaces all upper-level `add_header`s.
-                  add_header Content-Disposition attachment;
-                  add_header X-Content-Type-Options nosniff;
-                }
-
-                limit_except GET {
-                  proxy_pass http://127.0.0.1:5050;
-                }
-              '';
-            };
-            "/http-bind/" = {
-              proxyPass = "http://127.0.0.1:5280";
-              extraConfig = ''
-                proxy_set_header Host ${domain};
-                proxy_set_header X-Forwarded-For $remote_addr;
-                proxy_buffering off;
-                tcp_nodelay on;
-              '';
-            };
-            "/xmpp-websocket/" = {
-              proxyPass = "http://127.0.0.1:5280";
-              proxyWebsockets = true;
-              extraConfig = ''
-                proxy_set_header Host ${domain};
-                proxy_set_header X-Forwarded-For $remote_addr;
-                # Workaround for Websocket Sniffer
-                proxy_set_header Sec-WebSocket-Protocol "xmpp";
-                proxy_buffering off;
-                tcp_nodelay on;
-              '';
-            };
-            "/muc_log/" = {
-              proxyPass = "http://127.0.0.1:5280";
-              extraConfig = ''
-                proxy_set_header Host conference.${domain};
-
-                auth_pam "Restricted area";
-                auth_pam_service_name "mylittleserver";
-              '';
-            };
-          };
+    services.nginx.virtualHosts."xmpp.${domain}" = {
+      forceSSL = true;
+      enableACME = true;
+      # We set Host to the XMPP server host -- it's needed for Prosody.
+      locations = {
+        "/".root = pkgs.replaceVarsWith {
+          src = ./conversejs/index.html;
+          replacements = {inherit domain;};
+          dir = ".";
         };
-      }
+        "/upload/" = {
+          alias = "${cfg.upload.dir}/";
+          extraConfig = ''
+            proxy_request_buffering off;
+            client_max_body_size ${toString cfg.upload.maxSizeMb}m;
 
-      (listToAttrs (map (host:
-        nameValuePair host {
-          onlySSL = false;
-          forceSSL = false;
-          locations."^~ /.well-known/acme-challenge/".root = config.security.acme.certs.${domain}.webroot;
-        })
-      xmppDomains))
-    ];
+            # To view text files.
+            charset utf-8;
+
+            add_header X-Content-Type-Options nosniff;
+            if ( $request_filename !~* \.(txt|png|jpg|jpeg|avif|gif|webp|pdf|mp3|ogg|m4a|mp4|webm)$ ){
+              # Nested `add_header` replaces all upper-level `add_header`s.
+              add_header Content-Disposition attachment;
+              add_header X-Content-Type-Options nosniff;
+            }
+
+            limit_except GET {
+              proxy_pass http://127.0.0.1:5050;
+            }
+          '';
+        };
+        "/http-bind/" = {
+          proxyPass = "http://127.0.0.1:5280";
+          extraConfig = ''
+            proxy_set_header Host ${domain};
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_buffering off;
+            tcp_nodelay on;
+          '';
+        };
+        "/xmpp-websocket/" = {
+          proxyPass = "http://127.0.0.1:5280";
+          proxyWebsockets = true;
+          extraConfig = ''
+            proxy_set_header Host ${domain};
+            proxy_set_header X-Forwarded-For $remote_addr;
+            # Workaround for Websocket Sniffer
+            proxy_set_header Sec-WebSocket-Protocol "xmpp";
+            proxy_buffering off;
+            tcp_nodelay on;
+          '';
+        };
+        "/muc_log/" = {
+          proxyPass = "http://127.0.0.1:5280";
+          extraConfig = ''
+            proxy_set_header Host conference.${domain};
+
+            auth_pam "Restricted area";
+            auth_pam_service_name "mylittleserver";
+          '';
+        };
+      };
+    };
 
     systemd.services = {
       "prosody-db-auth" = {
@@ -306,6 +294,8 @@ in {
       enable = true;
       params.prosody = {};
     };
+
+    mylittleserver.ssl.nonHttpsCerts = listToAttrs (map (domain: nameValuePair domain {extraDomain = true;}) xmppDomains);
 
     security.acme.certs.${domain} = {
       extraDomainNames = xmppDomains;

@@ -438,12 +438,12 @@ in {
 
     mylittleserver.ssl.nonHttpsCerts = {
       "mx.${domain}" = {};
-      "smtp.${domain}" = {};
+      "smtp.${domain}" = {extraDomain = true;};
       "imap.${domain}" = {};
     };
 
     security.acme.certs = {
-     "mx.${domain}" = {
+      "mx.${domain}" = {
         group = "postfix";
         extraDomainNames = ["smtp.${domain}"];
         postRun = ''

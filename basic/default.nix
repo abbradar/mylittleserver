@@ -42,6 +42,16 @@ with lib; let
     };
   };
 
+  certsModule = {...}: {
+    options = {
+      extraDomain = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Don't define a separate `acme.certs` entry for this domain.";
+      };
+    };
+  };
+
   mailuserBins = makeBinPath [pkgs.mkpasswd pkgs.gnused config.services.postgresql.package];
 
   mailuser = pkgs.writers.writeBashBin "mailuser" ''
@@ -72,7 +82,7 @@ in {
       };
 
       ssl.nonHttpsCerts = mkOption {
-        type = types.attrsOf (types.submodule {});
+        type = types.attrsOf (types.submodule certsModule);
         default = {};
         internal = true;
         description = ''
@@ -185,11 +195,14 @@ in {
         ${domain}.group = "mylittleserver-ssl";
       }
 
-      (mapAttrs (host: opts: {
-          webroot = acmeChallengePath;
-          dnsProvider = mkOverride 1000 null;
+      (concatMapAttrs (host: opts:
+        optionalAttrs (!opts.extraDomain) {
+          ${host} = {
+            webroot = acmeChallengePath;
+            dnsProvider = mkOverride 1000 null;
+          };
         })
-        cfg.ssl.nonHttpsCerts)
+      cfg.ssl.nonHttpsCerts)
     ];
 
     systemd.services."mls-init-basic-database" = {

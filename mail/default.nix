@@ -71,10 +71,11 @@ in {
 
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver.dnsRecords = ''
-      ;; "smtp" needs A and/or AAAA records.
+      ;; "mx" needs A and/or AAAA records.
+      smtp CNAME ${domain}.
       imap CNAME ${domain}.
       mail CNAME ${domain}.
-      @ MX 10 smtp.${domain}.
+      @ MX 10 mx.${domain}.
       @ TXT "v=spf1 mx -all"
       mail._domainkey TXT "v=DKIM1; h=sha256; s=email; p=${dkimPublicKey}; t=s"
       _dmarc TXT "v=DMARC1; p=reject; rua=mailto:dmarc@${domain}; fo=1"
@@ -146,6 +147,7 @@ in {
     services.postfix = let
       commonSubmissionOptions = {
         syslog_name = "postfix/submission";
+        smtp_helo_name = "smtp.${domain}";
         smtpd_sasl_auth_enable = "yes";
         smtpd_helo_restrictions = "";
         smtpd_client_restrictions = "$mua_client_restrictions";
@@ -201,7 +203,7 @@ in {
         # soft_bounce = true;
 
         # Core things
-        myhostname = "smtp.${domain}";
+        myhostname = "mx.${domain}";
         mydestination = [];
         mynetworks_style = "host";
         virtual_mailbox_domains = [domain];
@@ -215,7 +217,7 @@ in {
         # Encryption (server-side)
         smtpd_tls_mandatory_ciphers = "high";
         smtpd_tls_mandatory_protocols = ["!SSLv2" "!SSLv3"];
-        smtpd_tls_chain_files = ["/var/lib/acme/smtp.${domain}/full.pem"];
+        smtpd_tls_chain_files = ["/var/lib/acme/mx.${domain}/full.pem"];
 
         smtpd_tls_session_cache_database = "btree:/var/lib/postfix/data/smtpd_tls_session_cache";
         smtpd_tls_session_cache_timeout = "3600s";
@@ -435,21 +437,23 @@ in {
     };
 
     mylittleserver.ssl.nonHttpsCerts = {
-      "imap.${domain}" = {};
+      "mx.${domain}" = {};
       "smtp.${domain}" = {};
+      "imap.${domain}" = {};
     };
 
     security.acme.certs = {
+     "mx.${domain}" = {
+        group = "postfix";
+        extraDomainNames = ["smtp.${domain}"];
+        postRun = ''
+          systemctl reload postfix
+        '';
+      };
       "imap.${domain}" = {
         group = "dovecot2";
         postRun = ''
           systemctl reload dovecot2
-        '';
-      };
-      "smtp.${domain}" = {
-        group = "postfix";
-        postRun = ''
-          systemctl reload postfix
         '';
       };
     };

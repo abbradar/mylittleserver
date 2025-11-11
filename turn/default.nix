@@ -30,16 +30,12 @@ in {
 
     networking.firewall = {
       allowedTCPPorts = [
-        3478
-        3479 # STUN
-        5349
-        5350 # STUNS
+        3478 # STUN
+        5349 # STUNS
       ];
       allowedUDPPorts = [
-        3478
-        3479 # STUN
-        5349
-        5350 # STUNS
+        3478 # STUN
+        5349 # STUNS
       ];
       allowedUDPPortRanges = [
         {

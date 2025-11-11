@@ -121,8 +121,8 @@ in {
     '';
 
     networking.firewall.allowedTCPPorts = [
-      80
-      443 # HTTP
+      80 # HTTP
+      443 # HTTPS
     ];
 
     environment.systemPackages = with pkgs; [

@@ -36,6 +36,8 @@ http_upload_external_file_size_limit = 104857600
 
 turn_external_host = "turn.@domain@"
 turn_external_secret = "@turnSecret@"
+turn_external_tcp = true
+turn_external_tls_port = 5349
 
 proxy65_ports = { 7777 }
 

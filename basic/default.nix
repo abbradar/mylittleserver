@@ -106,8 +106,8 @@ in {
 
   config = mkIf cfg.enable {
     mylittleserver.dnsRecords = mkBefore ''
-      # "@" needs A and/or AAAA records.
-      # Also, the server's PTR record must point to ${domain}.
+      ;; "@" needs A and/or AAAA records.
+      ;; Also, the server's PTR record must point to ${domain}.
     '';
 
     networking.firewall.allowedTCPPorts = [

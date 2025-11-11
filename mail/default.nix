@@ -71,7 +71,7 @@ in {
 
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver.dnsRecords = ''
-      # "smtp" needs A and/or AAAA records.
+      ;; "smtp" needs A and/or AAAA records.
       imap CNAME ${domain}.
       mail CNAME ${domain}.
       @ MX 10 smtp.${domain}.

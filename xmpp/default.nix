@@ -24,8 +24,6 @@ with lib; let
     "conference.${domain}"
     "pubsub.${domain}"
   ];
-
-  dbAuth = pkgs.python3.pkgs.callPackage ./db-auth {};
 in {
   options = {
     mylittleserver.xmpp = {
@@ -62,6 +60,7 @@ in {
     mylittleserver = {
       nginx.pam = true;
       turn.enable = true;
+      db-auth.allowedUnsafeUsers = ["prosody"];
       hostMeta.links = [
         {
           rel = "urn:xmpp:alt-connections:websocket";
@@ -90,20 +89,6 @@ in {
         5269 # XMPP server
         7777 # SOCKS5 (XMPP file transfer)
       ];
-
-      # db-auth allows one to *reset the user password* with an unauthenticated HTTP request!
-      # Restrict this to prosody user.
-      extraCommands = ''
-        ip46tables -A OUTPUT -o lo -m owner --uid-owner prosody -p tcp -m tcp --dport 12344 -j ACCEPT
-        ip46tables -A OUTPUT -o lo -m owner --uid-owner root -p tcp -m tcp --dport 12344 -j ACCEPT
-        ip46tables -A OUTPUT -o lo -p tcp -m tcp --dport 12344 -j REJECT
-      '';
-
-      extraStopCommands = ''
-        ip46tables -D OUTPUT -o lo -m owner --uid-owner prosody -p tcp -m tcp --dport 12344 -j ACCEPT 2>/dev/null || true
-        ip46tables -D OUTPUT -o lo -m owner --uid-owner root -p tcp -m tcp --dport 12344 -j ACCEPT 2>/dev/null || true
-        ip46tables -D OUTPUT -o lo -p tcp -m tcp --dport 12344 -j REJECT 2>/dev/null || true
-      '';
     };
 
     services.prosody = {
@@ -245,47 +230,12 @@ in {
       };
     };
 
-    systemd.services = {
-      "prosody-db-auth" = {
-        description = "Responds to authentication requests from Prosody.";
-        wantedBy = ["multi-user.target"];
-        before = ["prosody.service"];
-        after = ["network.target"];
-        serviceConfig = {
-          User = "db-auth";
-          Group = "db-auth";
-          DynamicUser = true;
-          ExecStart = "${dbAuth}/bin/db_auth -p 12344 ${escapeShellArg rootCfg.accounts.database}";
-          Restart = "on-failure";
-        };
-      };
-
-      "mls-init-xmpp-database" = {
-        description = "Initialize MyLittleServer's XMPP database.";
-        wantedBy = ["multi-user.target"];
-        after = ["postgresql.service" "mls-init-basic-database.service"];
-        before = ["db-auth.service" "prosody.service"];
-        path = [config.services.postgresql.package];
-        serviceConfig = {
-          Type = "oneshot";
-          User = "postgres";
-          Group = "postgres";
-        };
-        script = ''
-          psql prosody < ${./init.sql}
-        '';
-      };
-    };
-
     services.postgresql = {
       ensureDatabases = ["prosody"];
       ensureUsers = [
         {
           name = "prosody";
           ensureDBOwnership = true;
-        }
-        {
-          name = "db-auth";
         }
       ];
     };

@@ -49,7 +49,7 @@ in {
         modules = [pkgs.nginxModules.pam];
       };
 
-      systemd.services."mls-init-pam-database" = {
+      systemd.services."mls-init-nginx-pam-database" = {
         description = "Initialize MyLittleServer Nginx PAM database.";
         wantedBy = ["multi-user.target"];
         after = ["postgresql.service" "mls-init-basic-database.service"];

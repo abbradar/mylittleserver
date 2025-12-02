@@ -9,6 +9,7 @@
       flake.nixosModules.default.imports = [
         ./basic
         ./pam
+        ./db-auth
         ./mail
         ./turn
         ./dav
@@ -18,11 +19,18 @@
 
       systems = ["x86_64-linux"];
 
-      perSystem = {pkgs, ...}: {
+      perSystem = {pkgs, ...}: let
+        db-auth = pkgs.python3.pkgs.callPackage ./db-auth/db-auth {};
+      in {
         formatter = pkgs.alejandra;
         packages = {
-          db-auth = pkgs.python3.pkgs.callPackage ./xmpp/db-auth {};
+          inherit db-auth;
           pam_pgsql = pkgs.callPackage ./pam/pam_pgsql.nix {};
+        };
+        devShells = {
+          db-auth = db-auth.overridePythonAttrs (self: {
+            nativeBuildInputs = [pkgs.pyright pkgs.ruff];
+          });
         };
       };
     });

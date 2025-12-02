@@ -47,18 +47,6 @@ in {
 
     services.radicale = {
       enable = true;
-      /*
-        package = pkgs.radicale.overridePythonAttrs (self: let
-        # Cursed but it works.
-        python = (head self.build-system).pythonModule;
-      in {
-        dependencies =
-          self.dependencies or []
-          ++ [
-            python.pkgs.python-pam
-          ];
-      });
-      */
       settings = {
         server.hosts = ["127.0.0.1:5232"];
         auth = {

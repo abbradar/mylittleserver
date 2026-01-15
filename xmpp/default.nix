@@ -20,10 +20,12 @@ with lib; let
     "http_upload_external"
   ];
 
-  xmppDomains = [
-    "conference.${domain}"
-    "pubsub.${domain}"
+  xmppSubdomains = [
+    "conference"
+    "pubsub"
   ];
+
+  xmppDomains = map (name: "${name}.${domain}") xmppSubdomains;
 in {
   options = {
     mylittleserver.xmpp = {
@@ -74,6 +76,10 @@ in {
       dnsRecords = ''
         proxy65 CNAME ${domain}.
         xmpp CNAME ${domain}.
+        ${concatMapStringsSep "\n" (subdomain: ''
+            ${subdomain} CNAME xmpp.${domain}.
+          '')
+          xmppSubdomains}
         _xmpp-client._tcp SRV 0 1 5222 xmpp.${domain}.
         _xmpps-client._tcp SRV 0 1 5223 xmpp.${domain}.
         _xmpp-server._tcp SRV 0 1 5269 xmpp.${domain}.

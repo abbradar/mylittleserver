@@ -353,6 +353,7 @@ in {
         "neural_group.conf".source = ./rspamd/neural_group.conf;
         "redis.conf".source = ./rspamd/redis.conf;
         "classifier-bayes.conf".source = ./rspamd/classifier-bayes.conf;
+        "greylist.conf".source = ./rspamd/greylist.conf;
       };
 
       workers = {

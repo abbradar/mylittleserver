@@ -1,11 +1,15 @@
 import argparse
 import asyncio
 from asyncio import TaskGroup
+import html
+from importlib import resources
 
 from aiohttp import web
 import asyncpg
 
 from .auth import DbAuth
+
+_CHANGE_PASSWORD_HTML = resources.files("db_auth").joinpath("change_password.html").read_text()
 
 
 def bool_to_reply(b: bool) -> web.Response:
@@ -45,6 +49,40 @@ async def prosody_set_password_route(request: web.Request) -> web.Response:
     return web.Response(status=201)
 
 
+def _change_password_page(message: str = "") -> web.Response:
+    if message:
+        message_html = f"<p><b>{html.escape(message)}</b></p>"
+    else:
+        message_html = ""
+    return web.Response(
+        text=_CHANGE_PASSWORD_HTML.format(message=message_html),
+        content_type="text/html",
+    )
+
+
+async def change_password_get(request: web.Request) -> web.Response:
+    return _change_password_page()
+
+
+async def change_password_post(request: web.Request) -> web.Response:
+    data = await request.post()
+    user = data.get("user")
+    old_password = data.get("old_password")
+    new_password = data.get("new_password")
+    if (
+        not isinstance(user, str)
+        or not isinstance(old_password, str)
+        or not isinstance(new_password, str)
+    ):
+        return _change_password_page("All fields are required.")
+    auth: DbAuth = request.app["auth"]
+    if not await auth.check_password(user, old_password):
+        return _change_password_page("Wrong user or password.")
+    if not await auth.set_password(user, new_password):
+        raise RuntimeError(f"User {user} has vanished")
+    return _change_password_page("Password changed successfully.")
+
+
 async def oauth2_route(request: web.Request) -> web.Response:
     data = await request.post()
     grant_type = data.get("grant_type")
@@ -81,7 +119,12 @@ def create_app(auth: DbAuth, *, allow_set_password: bool = False) -> web.Applica
         my_prosody_set_password_route = not_implemented_route
     app.router.add_route("POST", "/prosody/set_password", my_prosody_set_password_route)
     app.router.add_route("POST", "/prosody/remove_user", not_implemented_route)
+
     app.router.add_route("POST", "/oauth2", oauth2_route)
+
+    app.router.add_route("GET", "/ui/change_password", change_password_get)
+    app.router.add_route("POST", "/ui/change_password", change_password_post)
+
     return app
 
 

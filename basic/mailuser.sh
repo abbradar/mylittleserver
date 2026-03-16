@@ -40,7 +40,7 @@ shift && usage || true
 
 if [ -n "$use_pwgen" ]; then
   plaintext="$(pwgen -s 20 1)"
-  passwd="$(mkpasswd -m bcrypt "$plaintext")"
+  passwd="$(mkpasswd -m bcrypt -- "$plaintext")"
   echo "$plaintext"
 else
   passwd="$(mkpasswd -m bcrypt "${mkpasswd_opts[@]}")"

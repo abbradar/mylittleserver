@@ -39,9 +39,8 @@ passwd="$(mkpasswd -m bcrypt "${mkpasswd_opts[@]}")"
 psql "$database" \
   -v "user=$user" \
   -v "passwd=$passwd" \
-  -v "is_enabled=$is_enabled" \
-  -c "
+  -v "is_enabled=$is_enabled" <<'EOSQL'
 INSERT INTO users (name, password, enabled)
   VALUES (:'user', :'passwd', :is_enabled)
   ON CONFLICT (name) DO UPDATE SET password=EXCLUDED.password, enabled=EXCLUDED.enabled;
-"
+EOSQL

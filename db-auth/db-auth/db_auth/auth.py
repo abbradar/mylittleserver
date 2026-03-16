@@ -7,7 +7,7 @@ import asyncpg
 _UPDATE_REGEX = re.compile(r"UPDATE (\d+)")
 
 
-_CRYPT_CONTEXT = CryptContext(schemes=["bcrypt", "sha512_crypt"])
+_CRYPT_CONTEXT = CryptContext(schemes=["bcrypt", "sha512_crypt"], deprecated=["sha512_crypt"])
 
 
 def _parse_update_affected(status: str) -> int:
@@ -31,7 +31,14 @@ class DbAuth:
             if row is None:
                 return False
             password_hash = row["password"]
-            return _CRYPT_CONTEXT.verify(password, password_hash)
+            valid, new_hash = _CRYPT_CONTEXT.verify_and_update(password, password_hash)
+            if valid and new_hash is not None:
+                await conn.execute(
+                    "UPDATE users SET password = $2 WHERE name = $1",
+                    user,
+                    new_hash,
+                )
+            return valid
 
     async def user_exists(self, user: str) -> bool:
         async with self._pool.acquire() as conn:

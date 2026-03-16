@@ -60,7 +60,7 @@ in {
 
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver = {
-      nginx.pam = true;
+      nginx.authDomains = ["xmpp.${domain}"];
       turn.enable = true;
       db-auth.allowedUnsafeUsers = ["prosody"];
       hostMeta.links = [
@@ -229,8 +229,7 @@ in {
           extraConfig = ''
             proxy_set_header Host conference.${domain};
 
-            auth_pam "Restricted area";
-            auth_pam_service_name "mylittleserver";
+            auth_request /internal/auth;
           '';
         };
       };

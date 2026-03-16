@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 from asyncio import TaskGroup
+import base64
 import html
 from importlib import resources
 
@@ -60,29 +61,6 @@ def _change_password_page(message: str = "") -> web.Response:
     )
 
 
-async def change_password_get(request: web.Request) -> web.Response:
-    return _change_password_page()
-
-
-async def change_password_post(request: web.Request) -> web.Response:
-    data = await request.post()
-    user = data.get("user")
-    old_password = data.get("old_password")
-    new_password = data.get("new_password")
-    if (
-        not isinstance(user, str)
-        or not isinstance(old_password, str)
-        or not isinstance(new_password, str)
-    ):
-        return _change_password_page("All fields are required.")
-    auth: DbAuth = request.app["auth"]
-    if not await auth.check_password(user, old_password):
-        return _change_password_page("Wrong user or password.")
-    if not await auth.set_password(user, new_password):
-        raise RuntimeError(f"User {user} has vanished")
-    return _change_password_page("Password changed successfully.")
-
-
 async def oauth2_route(request: web.Request) -> web.Response:
     data = await request.post()
     grant_type = data.get("grant_type")
@@ -106,6 +84,44 @@ async def oauth2_route(request: web.Request) -> web.Response:
     )
 
 
+async def nginx_check_route(request: web.Request) -> web.Response:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Basic "):
+        raise web.HTTPUnauthorized(headers={"WWW-Authenticate": "Basic"})
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+        user, password = decoded.split(":", 1)
+    except (ValueError, UnicodeDecodeError):
+        raise web.HTTPUnauthorized(headers={"WWW-Authenticate": "Basic"})
+    auth: DbAuth = request.app["auth"]
+    if not await auth.check_password(user, password):
+        raise web.HTTPUnauthorized(headers={"WWW-Authenticate": "Basic"})
+    return web.Response(status=200)
+
+
+async def change_password_get_route(request: web.Request) -> web.Response:
+    return _change_password_page()
+
+
+async def change_password_post_route(request: web.Request) -> web.Response:
+    data = await request.post()
+    user = data.get("user")
+    old_password = data.get("old_password")
+    new_password = data.get("new_password")
+    if (
+        not isinstance(user, str)
+        or not isinstance(old_password, str)
+        or not isinstance(new_password, str)
+    ):
+        return _change_password_page("All fields are required.")
+    auth: DbAuth = request.app["auth"]
+    if not await auth.check_password(user, old_password):
+        return _change_password_page("Wrong user or password.")
+    if not await auth.set_password(user, new_password):
+        raise RuntimeError(f"User {user} has vanished")
+    return _change_password_page("Password changed successfully.")
+
+
 def create_app(auth: DbAuth, *, allow_set_password: bool = False) -> web.Application:
     app = web.Application()
     app["auth"] = auth
@@ -122,8 +138,10 @@ def create_app(auth: DbAuth, *, allow_set_password: bool = False) -> web.Applica
 
     app.router.add_route("POST", "/oauth2", oauth2_route)
 
-    app.router.add_route("GET", "/ui/change_password", change_password_get)
-    app.router.add_route("POST", "/ui/change_password", change_password_post)
+    app.router.add_route("GET", "/nginx/check", nginx_check_route)
+
+    app.router.add_route("GET", "/ui/change_password", change_password_get_route)
+    app.router.add_route("POST", "/ui/change_password", change_password_post_route)
 
     return app
 

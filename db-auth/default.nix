@@ -13,7 +13,7 @@ with lib; let
   dbAuth = pkgs.python3.pkgs.callPackage ./db-auth {};
 
   makeFirewallRules = port: users: let
-    allUsers = ["root"] ++ users;
+    allUsers = unique (["root"] ++ users);
   in {
     extraCommands = ''
       ${concatMapStringsSep "\n" (user: ''
@@ -50,7 +50,22 @@ in {
         '';
       };
 
-      exposeUi = mkEnableOption "exposing the password change UI via nginx";
+      ui.enable = mkEnableOption "exposing the password change UI via nginx";
+    };
+
+    mylittleserver.nginx.authDomains = mkOption {
+      type = types.listOf types.str;
+      default = [];
+      example = ["xmpp.example.com"];
+      description = mdDoc ''
+        Nginx virtual hosts that should have an internal `/internal/auth`
+        location for `auth_request` against db-auth. To protect a location,
+        add to its `extraConfig`:
+
+        ```
+          auth_request /internal/auth;
+        ```
+      '';
     };
   };
 
@@ -108,7 +123,22 @@ in {
       };
     })
 
-    (mkIf (rootCfg.enable && cfg.exposeUi) {
+    (mkIf (rootCfg.nginx.authDomains != []) {
+      mylittleserver.db-auth.allowedUsers = ["nginx"];
+
+      services.nginx.virtualHosts = genAttrs rootCfg.nginx.authDomains (host: {
+        locations."= /internal/auth" = {
+          extraConfig = ''
+            internal;
+            proxy_pass http://127.0.0.1:12343/nginx/check;
+            proxy_pass_request_body off;
+            proxy_set_header Content-Length "";
+          '';
+        };
+      });
+    })
+
+    (mkIf (rootCfg.enable && cfg.ui.enable) {
       mylittleserver.db-auth.allowedUsers = ["nginx"];
 
       services.nginx.virtualHosts.${domain}.locations."/ui/" = {

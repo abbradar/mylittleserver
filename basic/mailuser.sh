@@ -5,14 +5,15 @@ set -eE -o pipefail
 : "${database:?database environment variable must be set}"
 
 usage() {
-  echo "Usage: $0 [-e|-d] [-s] username" >&2
+  echo "Usage: $0 [-e|-d] [-s|-g] username" >&2
   exit 1
 }
 
 is_enabled="true"
+use_pwgen=
 mkpasswd_opts=()
 
-while getopts ":eds" arg; do
+while getopts ":edsg" arg; do
   case "$arg" in
     e)
       is_enabled="true"
@@ -22,6 +23,9 @@ while getopts ":eds" arg; do
       ;;
     s)
       mkpasswd_opts+=("-s")
+      ;;
+    g)
+      use_pwgen=1
       ;;
     *)
       usage
@@ -34,7 +38,13 @@ shift $((OPTIND - 1))
 user="$1" && shift && [ -n "$user" ] || usage
 shift && usage || true
 
-passwd="$(mkpasswd -m bcrypt "${mkpasswd_opts[@]}")"
+if [ -n "$use_pwgen" ]; then
+  plaintext="$(pwgen -s 20 1)"
+  passwd="$(mkpasswd -m bcrypt "$plaintext")"
+  echo "$plaintext"
+else
+  passwd="$(mkpasswd -m bcrypt "${mkpasswd_opts[@]}")"
+fi
 
 psql "$database" \
   -v "user=$user" \

@@ -52,7 +52,7 @@ with lib; let
     };
   };
 
-  mailuserBins = makeBinPath [pkgs.mkpasswd pkgs.gnused config.services.postgresql.package];
+  mailuserBins = makeBinPath [pkgs.mkpasswd pkgs.pwgen config.services.postgresql.package];
 
   mailuser = pkgs.writers.writeBashBin "mailuser" ''
     export PATH=${escapeShellArg mailuserBins}

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-set -e
+set -eE -o pipefail
+
+: "${database:?database environment variable must be set}"
 
 usage() {
   echo "Usage: $0 [-e|-d] [-s] username" >&2
@@ -27,16 +29,19 @@ while getopts ":eds" arg; do
   esac
 done
 
-shift $(($OPTIND - 1))
+shift $((OPTIND - 1))
 
 user="$1" && shift && [ -n "$user" ] || usage
 shift && usage || true
 
-passwd="$(mkpasswd -m bcrypt "${mkpasswd_opts[@]}" | sed 's/^{.*}//')"
+passwd="$(mkpasswd -m bcrypt "${mkpasswd_opts[@]}")"
 
-psql "$database" -c """
-UPDATE users SET password='$passwd', enabled=$is_enabled WHERE name='$user';
+psql "$database" \
+  -v "user=$user" \
+  -v "passwd=$passwd" \
+  -v "is_enabled=$is_enabled" \
+  -c "
 INSERT INTO users (name, password, enabled)
-  SELECT '$user', '$passwd', $is_enabled
-  WHERE NOT EXISTS (SELECT 1 FROM users WHERE name='$user');
-"""
+  VALUES (:'user', :'passwd', :is_enabled)
+  ON CONFLICT (name) DO UPDATE SET password=EXCLUDED.password, enabled=EXCLUDED.enabled;
+"

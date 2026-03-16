@@ -1,60 +1,11 @@
-#!/usr/bin/env python3
-
 import argparse
-import re
-from passlib.context import CryptContext
 import asyncio
 from asyncio import TaskGroup
+
 from aiohttp import web
 import asyncpg
 
-
-UPDATE_REGEX = re.compile(r"UPDATE (\d+)")
-
-
-CRYPT_CONTEXT = CryptContext(schemes=["bcrypt", "sha512_crypt"])
-
-
-def parse_update_affected(status: str) -> int:
-    match = UPDATE_REGEX.fullmatch(status)
-    if match is None:
-        raise RuntimeError("Unexpected status format")
-    return int(match.group(1))
-
-
-class DbAuth:
-    _pool: asyncpg.pool.Pool
-
-    def __init__(self, pool: asyncpg.pool.Pool):
-        self._pool = pool
-
-    async def check_password(self, user: str, password: str) -> bool:
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT password FROM users WHERE name = $1 AND enabled", user
-            )
-            if row is None:
-                return False
-            password_hash = row["password"]
-            return CRYPT_CONTEXT.verify(password, password_hash)
-
-    async def user_exists(self, user: str) -> bool:
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT COUNT(*) FROM users WHERE name = $1 AND enabled", user
-            )
-            return row[0] > 0
-
-    async def set_password(self, user: str, new_password: str):
-        async with self._pool.acquire() as conn:
-            password_hash = CRYPT_CONTEXT.hash(new_password)
-            ret = await conn.execute(
-                "UPDATE users SET password = $2 WHERE name = $1 AND enabled",
-                user,
-                password_hash,
-            )
-            affected = parse_update_affected(ret)
-            return affected > 0
+from .auth import DbAuth
 
 
 def bool_to_reply(b: bool) -> web.Response:
@@ -158,9 +109,7 @@ async def amain():
             group.create_task(web._run_app(app, host=args.host, port=args.port))
         if args.unsafe_port:
             unsafe_app = create_app(auth, allow_set_password=True)
-            group.create_task(
-                web._run_app(unsafe_app, host=args.host, port=args.unsafe_port)
-            )
+            group.create_task(web._run_app(unsafe_app, host=args.host, port=args.unsafe_port))
         while True:
             await asyncio.sleep(3600)
 

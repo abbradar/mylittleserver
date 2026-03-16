@@ -10,6 +10,8 @@ with lib; let
 
   inherit (rootCfg) domain;
 
+  dbAuth = pkgs.python3.pkgs.callPackage ../db-auth/db-auth {};
+
   matrixClientDiscover = pkgs.writeText "matrix-client-discover.json" (builtins.toJSON {
     "m.homeserver"."base_url" = "https://matrix.${domain}";
   });
@@ -43,7 +45,6 @@ in {
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver = {
       turn.enable = true;
-      pam.enable = true;
 
       dnsRecords = ''
         matrix CNAME ${domain}.
@@ -90,18 +91,17 @@ in {
 
     services.matrix-synapse = {
       enable = true;
-      plugins = with pkgs.matrix-synapse-plugins; [matrix-synapse-pam];
+      plugins = [dbAuth];
       withJemalloc = true;
       enableRegistrationScript = false;
 
       settings = {
         password_config.localdb_enabled = false;
-        password_providers = [
+        modules = [
           {
-            module = "pam_auth_provider.PAMAuthProvider";
+            module = "db_auth.matrix.DBAuthProvider";
             config = {
-              create_users = true;
-              skip_user_check = true;
+              database = rootCfg.accounts.database;
             };
           }
         ];
@@ -163,8 +163,6 @@ in {
         }
       ];
     };
-
-    security.pam.services.matrix-synapse.text = config.security.pam.services.mylittleserver.text;
 
     systemd.tmpfiles.rules = [
       "d '${config.services.matrix-synapse.dataDir}' 0700 matrix-synapse matrix-synapse - -"

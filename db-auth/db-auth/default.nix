@@ -1,12 +1,15 @@
 {
-  buildPythonApplication,
+  buildPythonPackage,
   setuptools,
   aiohttp,
   asyncpg,
   libpass,
   bcrypt,
+  matrix-synapse-unwrapped,
+  ruff,
+  pyright,
 }:
-buildPythonApplication {
+buildPythonPackage {
   pname = "db-auth";
   version = "1.0";
   pyproject = true;
@@ -19,5 +22,17 @@ buildPythonApplication {
     asyncpg
     libpass
     bcrypt
+    matrix-synapse-unwrapped
   ];
+
+  nativeCheckInputs = [
+    pyright
+    ruff
+  ];
+
+  checkPhase = ''
+    ruff check .
+    ruff format --check .
+    pyright
+  '';
 }

@@ -8,7 +8,6 @@
     flake-parts.lib.mkFlake {inherit inputs;} ({...}: {
       flake.nixosModules.default.imports = [
         ./basic
-        ./pam
         ./db-auth
         ./mail
         ./turn
@@ -25,7 +24,6 @@
         formatter = pkgs.alejandra;
         packages = {
           inherit db-auth;
-          pam_pgsql = pkgs.callPackage ./pam/pam_pgsql.nix {};
         };
         devShells = {
           db-auth = db-auth.overridePythonAttrs (self: {

@@ -1,1 +1,0 @@
-GRANT auth TO nginx;

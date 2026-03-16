@@ -56,7 +56,7 @@ def _change_password_page(message: str = "") -> web.Response:
     else:
         message_html = ""
     return web.Response(
-        text=_CHANGE_PASSWORD_HTML.format(message=message_html),
+        text=_CHANGE_PASSWORD_HTML.replace("%message%", message_html),
         content_type="text/html",
     )
 

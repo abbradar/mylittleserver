@@ -20,6 +20,9 @@ dependencies = [
 [project.scripts]
 db_auth = "db_auth.__main__:main"
 
+[tool.setuptools.package-data]
+db_auth = ["*.html"]
+
 [tool.ruff]
 line-length = 100
 

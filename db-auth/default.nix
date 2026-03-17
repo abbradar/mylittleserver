@@ -10,7 +10,9 @@ with lib; let
 
   inherit (rootCfg) domain;
 
-  dbAuth = pkgs.python3.pkgs.callPackage ./db-auth {};
+  dbAuth = pkgs.python3.pkgs.callPackage ./db-auth {
+    withMatrix = false;
+  };
 
   makeFirewallRules = port: users: let
     allUsers = unique (["root"] ++ users);

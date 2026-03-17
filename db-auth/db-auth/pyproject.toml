@@ -11,10 +11,17 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "aiohttp>=3.9.0",
-    "asyncpg>=0.29.0",
     "libpass>=1.9.2",
     "bcrypt>=4.3.0",
+]
+
+[project.optional-dependencies]
+service = [
+    "aiohttp>=3.9.0",
+    "asyncpg>=0.29.0",
+]
+matrix = [
+    "psycopg2>=2.9.0",
 ]
 
 [project.scripts]

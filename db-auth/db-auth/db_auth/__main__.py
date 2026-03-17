@@ -8,7 +8,7 @@ from importlib import resources
 from aiohttp import web
 import asyncpg
 
-from .auth import DbAuth
+from .auth_asyncpg import DbAuthAsyncPG as DbAuth
 
 _CHANGE_PASSWORD_HTML = resources.files("db_auth").joinpath("change_password.html").read_text()
 
@@ -161,7 +161,7 @@ async def amain():
     if args.port is None and args.unsafe_port is None:
         raise RuntimeError("At least one of port or an unsafe port must be specified.")
 
-    pool = await asyncpg.create_pool(database=args.database, user=args.user)
+    pool = await asyncpg.create_pool(min_size=1, max_size=5, database=args.database, user=args.user)
     auth = DbAuth(pool)
 
     async with TaskGroup() as group:

@@ -1,34 +1,36 @@
 import logging
 
-import asyncpg
+import psycopg2.pool
+from twisted.internet.threads import deferToThread
 from synapse.module_api import JsonDict, ModuleApi
 
-from .auth import DbAuth
+from .auth_psycopg2 import DbAuthPsycopg2 as DbAuth
 
 logger = logging.getLogger(__name__)
 
 
 class DBAuthProvider:
+    _api: ModuleApi
+    _auth: DbAuth
+
     def __init__(self, config: dict[str, object], api: ModuleApi):
         self._api = api
-        self._database = config.get("database", "mylittleserver")
-        self._auth: DbAuth | None = None
+        database = config.get("database", "mylittleserver")
+        if not isinstance(database, str):
+            raise TypeError(f"database must be a string, got {type(database).__name__}")
+        pool = psycopg2.pool.ThreadedConnectionPool(1, 5, database=database)
+        self._auth = DbAuth(pool)
 
         api.register_password_auth_provider_callbacks(
             auth_checkers={
                 ("m.login.password", ("password",)): self.check_password,
             },
+            check_3pid_auth=self.check_3pid_auth,
         )
-
-    async def _get_auth(self) -> DbAuth:
-        if self._auth is None:
-            pool = await asyncpg.create_pool(database=self._database)
-            self._auth = DbAuth(pool)
-        return self._auth
 
     async def check_password(
         self,
-        username: str,
+        user_id: str,
         login_type: str,
         login_dict: JsonDict,
     ) -> tuple[str, None] | None:
@@ -36,14 +38,14 @@ class DBAuthProvider:
         if not password:
             return None
 
-        if username.startswith("@"):
-            localpart = username.split(":", 1)[0][1:]
+        if user_id.startswith("@"):
+            localpart = user_id.split(":", 1)[0][1:]
         else:
-            localpart = username
+            localpart = user_id
+            user_id = self._api.get_qualified_user_id(localpart)
 
         try:
-            auth = await self._get_auth()
-            valid = await auth.check_password(localpart, password)
+            valid = await deferToThread(self._auth.check_password, localpart, password)
         except Exception:
             logger.exception("Error checking password for %s", localpart)
             return None
@@ -52,8 +54,36 @@ class DBAuthProvider:
             return None
 
         # The user is authenticated.
-        user_exists = await self.account_handler.check_user_exists(username)
-        if not user_exists:
-            await self.account_handler.register(localpart=localpart)
+        if not await self._api.check_user_exists(user_id):
+            await self._api.register_user(localpart=localpart)
 
-        return username, None
+        return user_id, None
+
+    async def check_3pid_auth(
+        self,
+        medium: str,
+        address: str,
+        password: str,
+    ) -> tuple[str, None] | None:
+        if medium != "email":
+            return None
+
+        localpart, _, domain = address.rpartition("@")
+        if not localpart or domain != self._api.server_name:
+            return None
+
+        try:
+            valid = await deferToThread(self._auth.check_password, localpart, password)
+        except Exception:
+            logger.exception("Error checking password for %s", localpart)
+            return None
+
+        if not valid:
+            return None
+
+        user_id = self._api.get_qualified_user_id(localpart)
+        user_exists = await self._api.check_user_exists(user_id)
+        if not user_exists:
+            await self._api.register_user(localpart=localpart)
+
+        return user_id, None

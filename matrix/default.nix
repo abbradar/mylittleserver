@@ -10,7 +10,9 @@ with lib; let
 
   inherit (rootCfg) domain;
 
-  dbAuth = pkgs.python3.pkgs.callPackage ../db-auth/db-auth {};
+  dbAuth = pkgs.python3.pkgs.callPackage ../db-auth/db-auth {
+    withService = false;
+  };
 
   matrixClientDiscover = pkgs.writeText "matrix-client-discover.json" (builtins.toJSON {
     "m.homeserver"."base_url" = "https://matrix.${domain}";

@@ -1,11 +1,15 @@
 {
   buildPythonPackage,
   setuptools,
+  lib,
   aiohttp,
   asyncpg,
+  psycopg2,
   libpass,
   bcrypt,
   matrix-synapse-unwrapped,
+  withService ? true,
+  withMatrix ? true,
 }:
 buildPythonPackage {
   pname = "db-auth";
@@ -15,11 +19,17 @@ buildPythonPackage {
   src = ./.;
 
   build-system = [setuptools];
-  dependencies = [
-    aiohttp
-    asyncpg
-    libpass
-    bcrypt
-    matrix-synapse-unwrapped
-  ];
+  dependencies =
+    [
+      libpass
+      bcrypt
+    ]
+    ++ lib.optionals withService [
+      aiohttp
+      asyncpg
+    ]
+    ++ lib.optionals withMatrix [
+      psycopg2
+      matrix-synapse-unwrapped
+    ];
 }

@@ -51,5 +51,9 @@ class DBAuthProvider:
         if not valid:
             return None
 
-        user_id = self._api.get_qualified_user_id(localpart)
-        return user_id, None
+        # The user is authenticated.
+        user_exists = await self.account_handler.check_user_exists(username)
+        if not user_exists:
+            await self.account_handler.register(localpart=localpart)
+
+        return username, None

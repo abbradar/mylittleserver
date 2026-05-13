@@ -454,7 +454,7 @@ in {
       "imap.${domain}" = {
         group = "dovecot2";
         postRun = ''
-          systemctl reload dovecot2
+          systemctl reload dovecot
         '';
       };
     };

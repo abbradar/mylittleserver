@@ -176,7 +176,11 @@ in {
         };
       };
 
-      submissionOptions = commonSubmissionOptions;
+      submissionOptions =
+        commonSubmissionOptions
+        // {
+          smtpd_tls_security_level = "encrypt";
+        };
       submissionsOptions = commonSubmissionOptions;
 
       # For Roundcube, no TLS required.

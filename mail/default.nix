@@ -317,8 +317,6 @@ in {
         ];
 
         mua_recipient_restrictions = [
-          # DNS check
-          "reject_unknown_recipient_domain"
           # Check hostname validity
           "reject_non_fqdn_recipient"
           # Access rights check

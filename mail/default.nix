@@ -37,7 +37,7 @@ in {
 
       dataDir = mkOption {
         type = types.path;
-        default = "/var/lib/mylittleserver/dovecot2";
+        default = "/var/lib/mylittleserver/dovecot";
         description = ''
           Mail (Dovecot) data directory.
         '';
@@ -70,6 +70,11 @@ in {
   };
 
   config = mkIf (rootCfg.enable && cfg.enable) {
+    mylittleserver.backup = {
+      paths = [cfg.dataDir];
+      databases = ["roundcube"];
+    };
+
     mylittleserver.dnsRecords = ''
       ;; "mx" needs A and/or AAAA records.
       smtp CNAME ${domain}.

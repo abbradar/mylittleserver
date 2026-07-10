@@ -60,6 +60,10 @@ in {
 
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver = {
+      backup = {
+        paths = [cfg.upload.dir];
+        databases = ["prosody"];
+      };
       nginx.authDomains = ["xmpp.${domain}"];
       turn.enable = true;
       db-auth.allowedUnsafeUsers = ["prosody"];

@@ -115,6 +115,8 @@ in {
   };
 
   config = mkIf cfg.enable {
+    mylittleserver.backup.databases = [cfg.accounts.database];
+
     mylittleserver.dnsRecords = mkBefore ''
       ;; "@" needs A and/or AAAA records.
       ;; Also, the server's PTR record must point to ${domain}.

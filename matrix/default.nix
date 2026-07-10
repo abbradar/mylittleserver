@@ -26,6 +26,14 @@ in {
     mylittleserver.matrix = {
       enable = mkEnableOption "MyLittleServer Matrix module";
 
+      dataDir = mkOption {
+        type = types.path;
+        default = "/var/lib/mylittleserver/matrix-synapse";
+        description = ''
+          Synapse data directory.
+        '';
+      };
+
       database = mkOption {
         type = types.str;
         default = "matrix_synapse";
@@ -47,6 +55,11 @@ in {
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver = {
       turn.enable = true;
+
+      backup = {
+        paths = [cfg.dataDir];
+        databases = [cfg.database];
+      };
 
       dnsRecords = ''
         matrix CNAME ${domain}.
@@ -93,6 +106,7 @@ in {
 
     services.matrix-synapse = {
       enable = true;
+      dataDir = cfg.dataDir;
       plugins = [dbAuth];
       withJemalloc = true;
       enableRegistrationScript = false;
@@ -167,7 +181,7 @@ in {
     };
 
     systemd.tmpfiles.rules = [
-      "d '${config.services.matrix-synapse.dataDir}' 0700 matrix-synapse matrix-synapse - -"
+      "d '${cfg.dataDir}' 0700 matrix-synapse matrix-synapse - -"
     ];
   };
 }

@@ -27,6 +27,8 @@ in {
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver.db-auth.allowedUsers = ["radicale"];
 
+    mylittleserver.backup.paths = [cfg.dataDir];
+
     mylittleserver.dnsRecords = ''
       cal CNAME ${domain}.
       _caldavs._tcp SRV 0 1 443 cal.${domain}.

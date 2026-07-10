@@ -14,6 +14,7 @@
         ./dav
         ./xmpp
         ./matrix
+        ./backup
       ];
 
       systems = ["x86_64-linux"];

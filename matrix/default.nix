@@ -131,6 +131,7 @@ in {
         public_baseurl = "https://matrix.${domain}/";
         max_upload_size = "${toString cfg.upload.maxSizeMb}M";
         url_preview_enabled = true;
+        media_retention.remote_media_lifetime = "30d";
         turn_uris = [
           "turn:turn.${domain}:3478?transport=udp"
           "turn:turn.${domain}:3478?transport=tcp"
@@ -154,6 +155,11 @@ in {
           }
         ];
       };
+    };
+
+    services.synapse-auto-compressor = {
+      enable = true;
+      postgresUrl = "postgresql://matrix-synapse@${escapeURL "/run/postgresql"}/${cfg.database}";
     };
 
     systemd.services.matrix-synapse.serviceConfig.LoadCredential = ["turn-secret:${config.mylittleserver.turn.secretFile}"];

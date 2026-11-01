@@ -105,7 +105,7 @@ in {
         type = types.lines;
         internal = true;
         default = "";
-        description = mdDoc ''
+        description = ''
           DNS records that need to be added for the server to work.
 
           Exported to `/etc/mylittleserver.zone` for convenience.

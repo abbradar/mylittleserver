@@ -83,6 +83,15 @@ in {
         PostgreSQL databases to dump and back up.
       '';
     };
+
+    after = mkOption {
+      type = types.listOf types.str;
+      default = [];
+      internal = true;
+      description = ''
+        systemd units that the backup of {option}`paths` waits for.
+      '';
+    };
   };
 
   config = mkIf (rootCfg.enable && cfg.enable) {
@@ -125,18 +134,22 @@ in {
         )
         databases);
 
-    systemd.services = listToAttrs (map (
-        db:
-          nameValuePair "restic-backups-${dbJob db}" {
-            requires = ["postgresql.service"];
-            # Run it together and after the main backup initializes the repo and prunes.
-            wantedBy = ["restic-backups-mylittleserver.service"];
-            after = [
-              "postgresql.service"
-              "restic-backups-mylittleserver.service"
-            ];
-          }
-      )
-      databases);
+    systemd.services =
+      {
+        restic-backups-mylittleserver.after = cfg.after;
+      }
+      // listToAttrs (map (
+          db:
+            nameValuePair "restic-backups-${dbJob db}" {
+              requires = ["postgresql.service"];
+              # Run it together and after the main backup initializes the repo and prunes.
+              wantedBy = ["restic-backups-mylittleserver.service"];
+              after = [
+                "postgresql.service"
+                "restic-backups-mylittleserver.service"
+              ];
+            }
+        )
+        databases);
   };
 }

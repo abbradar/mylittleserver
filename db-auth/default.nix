@@ -59,7 +59,7 @@ in {
       type = types.listOf types.str;
       default = [];
       example = ["xmpp.example.com"];
-      description = mdDoc ''
+      description = ''
         Nginx virtual hosts that should have an internal `/internal/auth`
         location for `auth_request` against db-auth. To protect a location,
         add to its `extraConfig`:
@@ -111,7 +111,7 @@ in {
             Group = "postgres";
           };
           script = ''
-            psql prosody < ${./init.sql}
+            psql ${escapeShellArg rootCfg.accounts.database} < ${./init.sql}
           '';
         };
       };

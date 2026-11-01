@@ -17,7 +17,6 @@ with lib; let
     "presence_cache"
     "smacks"
     "presence_dedup"
-    "http_upload_external"
   ];
 
   xmppSubdomains = [
@@ -31,29 +30,20 @@ in {
     mylittleserver.xmpp = {
       enable = mkEnableOption "MyLittleServer XMPP module";
 
-      upload = {
-        dir = mkOption {
-          type = types.path;
-          default = "/var/lib/mylittleserver/xmpp-upload";
-          description = ''
-            XMPP files upload directory.
-          '';
-        };
+      dataDir = mkOption {
+        type = types.path;
+        default = "/var/lib/mylittleserver/prosody";
+        description = ''
+          Prosody data directory. Uploaded files are stored here.
+        '';
+      };
 
-        maxSizeMb = mkOption {
-          type = types.int;
-          default = 128;
-          description = ''
-            Maximum allowed uploaded file size.
-          '';
-        };
-
-        secret = mkOption {
-          type = types.str;
-          description = ''
-            HTTP upload static auth secret.
-          '';
-        };
+      upload.maxSizeMb = mkOption {
+        type = types.int;
+        default = 128;
+        description = ''
+          Maximum allowed uploaded file size.
+        '';
       };
     };
   };
@@ -61,7 +51,7 @@ in {
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver = {
       backup = {
-        paths = [cfg.upload.dir];
+        paths = [cfg.dataDir];
         databases = ["prosody"];
       };
       nginx.authDomains = ["xmpp.${domain}"];
@@ -74,7 +64,7 @@ in {
         }
         {
           rel = "urn:xmpp:alt-connections:xbosh";
-          href = "wss://xmpp.${domain}/http-bind/";
+          href = "https://xmpp.${domain}/http-bind/";
         }
       ];
       dnsRecords = ''
@@ -103,6 +93,7 @@ in {
 
     services.prosody = {
       enable = true;
+      inherit (cfg) dataDir;
       package = pkgs.prosody.override {
         withOnlyInstalledCommunityModules =
           [
@@ -142,8 +133,6 @@ in {
       extraConfig = let
         luaCfg = pkgs.replaceVars ./prosody.cfg.lua {
           inherit domain;
-          uploadSecret = cfg.upload.secret;
-          turnSecret = config.mylittleserver.turn.secret;
         };
       in ''
         Include "${luaCfg}"
@@ -153,9 +142,6 @@ in {
         # https://dev.gajim.org/gajim/gajim/-/issues/7253
         key = "/var/lib/acme/${domain}/full.pem";
         cert = "/var/lib/acme/${domain}/full.pem";
-        extraOptions = {
-          dhparam = "/var/lib/dhparams/prosody.pem";
-        };
       };
       httpInterfaces = ["127.0.0.1"];
       httpsPorts = [];
@@ -166,15 +152,17 @@ in {
         inherit domain;
         enabled = true;
       };
-    };
-
-    services.prosody-filer = {
-      enable = true;
-      settings = {
-        secret = cfg.upload.secret;
-        storeDir = cfg.upload.dir;
+      httpFileShare = {
+        domain = "upload.${domain}";
+        # Avoid an additional DNS record and certificate.
+        http_host = domain;
+        http_external_url = "https://xmpp.${domain}/";
+        size_limit = cfg.upload.maxSizeMb * 1024 * 1024;
+        expires_after = "never";
       };
     };
+
+    systemd.services.prosody.serviceConfig.LoadCredential = ["turn-secret:${config.mylittleserver.turn.secretFile}"];
 
     services.nginx.virtualHosts."xmpp.${domain}" = {
       forceSSL = true;
@@ -187,24 +175,13 @@ in {
           dir = ".";
         };
         "/upload/" = {
-          alias = "${cfg.upload.dir}/";
+          proxyPass = "http://127.0.0.1:5280";
           extraConfig = ''
+            proxy_set_header Host ${domain};
+            proxy_set_header X-Forwarded-For $remote_addr;
             proxy_request_buffering off;
+            proxy_buffering off;
             client_max_body_size ${toString cfg.upload.maxSizeMb}m;
-
-            # To view text files.
-            charset utf-8;
-
-            add_header X-Content-Type-Options nosniff;
-            if ( $request_filename !~* \.(txt|png|jpg|jpeg|avif|gif|webp|pdf|mp3|ogg|m4a|mp4|webm)$ ){
-              # Nested `add_header` replaces all upper-level `add_header`s.
-              add_header Content-Disposition attachment;
-              add_header X-Content-Type-Options nosniff;
-            }
-
-            limit_except GET {
-              proxy_pass http://127.0.0.1:5050;
-            }
           '';
         };
         "/http-bind/" = {
@@ -249,11 +226,6 @@ in {
       ];
     };
 
-    security.dhparams = {
-      enable = true;
-      params.prosody = {};
-    };
-
     mylittleserver.ssl.nonHttpsCerts = listToAttrs (map (domain: nameValuePair domain {extraDomain = true;}) xmppDomains);
 
     security.acme.certs.${domain} = {
@@ -264,13 +236,12 @@ in {
     };
 
     systemd.tmpfiles.rules = [
-      "d '${cfg.upload.dir}' 0750 prosody-filer prosody-filer - -"
+      "d '${cfg.dataDir}' 0750 prosody prosody - -"
     ];
 
     users = {
       groups.xmpp-ssl = {};
       users = {
-        nginx.extraGroups = ["prosody-filer"];
         prosody.extraGroups = ["mylittleserver-ssl"];
       };
     };

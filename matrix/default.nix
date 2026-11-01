@@ -138,11 +138,11 @@ in {
           # "turns:turn.${domain}:5349?transport=udp"
           # "turns:turn.${domain}:5349?transport=tcp"
         ];
-        turn_shared_secret = config.mylittleserver.turn.secret;
+        turn_shared_secret_path = "/run/credentials/matrix-synapse.service/turn-secret";
         listeners = [
           {
             path = "/run/matrix-synapse/http.sock";
-            mode = "666";
+            mode = "660";
             type = "http";
             x_forwarded = true;
             resources = [
@@ -156,6 +156,8 @@ in {
       };
     };
 
+    systemd.services.matrix-synapse.serviceConfig.LoadCredential = ["turn-secret:${config.mylittleserver.turn.secretFile}"];
+
     systemd.services."mls-init-matrix-database" = {
       description = "Initialize MyLittleServer's Matrix database.";
       wantedBy = ["multi-user.target"];
@@ -167,8 +169,12 @@ in {
         User = "postgres";
         Group = "postgres";
       };
-      script = ''
-        psql ${escapeShellArg cfg.database} < ${./init.sql}
+      script = let
+        script = pkgs.replaceVars ./init.sql {
+          inherit (cfg) database;
+        };
+      in ''
+        psql postgres < ${script}
       '';
     };
 
@@ -183,5 +189,7 @@ in {
     systemd.tmpfiles.rules = [
       "d '${cfg.dataDir}' 0700 matrix-synapse matrix-synapse - -"
     ];
+
+    users.users.nginx.extraGroups = ["matrix-synapse"];
   };
 }

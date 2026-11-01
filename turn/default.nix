@@ -14,10 +14,12 @@ in {
     mylittleserver.turn = {
       enable = mkEnableOption "MyLittleServer TURN module";
 
-      secret = mkOption {
+      secretFile = mkOption {
         type = types.str;
+        example = "/run/secrets/turn-secret";
         description = ''
-          TURN static auth secret.
+          File with the TURN static auth secret, without a trailing newline. Passed to
+          services via systemd credentials, so it doesn't end up in the Nix store.
         '';
       };
     };
@@ -49,12 +51,11 @@ in {
       enable = true;
       no-cli = true;
       use-auth-secret = true;
-      static-auth-secret = cfg.secret;
+      static-auth-secret-file = ''"$CREDENTIALS_DIRECTORY"/turn-secret'';
       realm = "turn.${domain}";
       no-tcp-relay = true;
       cert = "/var/lib/acme/turn.${domain}/fullchain.pem";
       pkey = "/var/lib/acme/turn.${domain}/key.pem";
-      dh-file = "/var/lib/dhparams/turn.pem";
       # https://www.rtcsec.com/article/slack-webrtc-turn-compromise-and-bug-bounty/#how-to-fix-an-open-turn-relay-to-address-this-vulnerability
       extraConfig = ''
         denied-peer-ip=0.0.0.0-0.255.255.255
@@ -79,6 +80,8 @@ in {
       '';
     };
 
+    systemd.services.coturn.serviceConfig.LoadCredential = ["turn-secret:${cfg.secretFile}"];
+
     mylittleserver.ssl.nonHttpsCerts."turn.${domain}" = {};
 
     security.acme.certs."turn.${domain}" = {
@@ -86,11 +89,6 @@ in {
       postRun = ''
         systemctl restart coturn
       '';
-    };
-
-    security.dhparams = {
-      enable = true;
-      params.turn = {};
     };
   };
 }

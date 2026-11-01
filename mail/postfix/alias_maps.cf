@@ -1,5 +1,6 @@
 hosts = /run/postgresql
 dbname = @database@
+domain = @domain@
 query = SELECT users.name || '@%d'
   FROM aliases LEFT JOIN users ON aliases.destination = users.id
   WHERE aliases.source = '%s'

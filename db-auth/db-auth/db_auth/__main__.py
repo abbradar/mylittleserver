@@ -165,12 +165,19 @@ async def amain():
     auth = DbAuth(pool)
 
     async with TaskGroup() as group:
+        # Access logs are disabled: Prosody passes passwords in query strings.
         if args.port:
             app = create_app(auth)
-            group.create_task(web._run_app(app, host=args.host, port=args.port))
+            group.create_task(
+                web._run_app(app, host=args.host, port=args.port, access_log=None)
+            )
         if args.unsafe_port:
             unsafe_app = create_app(auth, allow_set_password=True)
-            group.create_task(web._run_app(unsafe_app, host=args.host, port=args.unsafe_port))
+            group.create_task(
+                web._run_app(
+                    unsafe_app, host=args.host, port=args.unsafe_port, access_log=None
+                )
+            )
         while True:
             await asyncio.sleep(3600)
 

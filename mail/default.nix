@@ -43,6 +43,15 @@ in {
         '';
       };
 
+      purgeAt = mkOption {
+        type = types.str;
+        default = "12:00";
+        description = ''
+          When to purge expunged mails, in {manpage}`systemd.time(7)` format.
+          Should not overlap with backups.
+        '';
+      };
+
       maxSizeMb = mkOption {
         type = types.int;
         default = 32;
@@ -61,7 +70,7 @@ in {
 
         privateKeyPath = mkOption {
           type = types.path;
-          description = mdDoc ''
+          description = ''
             DKIM private key file path. Needs to be accessible by `rspamd` user.
           '';
         };
@@ -73,6 +82,7 @@ in {
     mylittleserver.backup = {
       paths = [cfg.dataDir];
       databases = ["roundcube"];
+      after = ["dovecot-purge.service"];
     };
 
     mylittleserver.dnsRecords = ''
@@ -110,7 +120,7 @@ in {
       # To filter mail queue.
       jq
       # Dovecot modules
-      dovecot_pigeonhole
+      config.services.dovecot2.package.passthru.dovecot_pigeonhole
     ];
 
     services.nginx.virtualHosts = {
@@ -145,7 +155,7 @@ in {
         $config['username_domain'] = '${domain}';
         $config['username_domain_forced'] = true;
         # Use an lo-bound SMTP with no TLS requirement.
-        $config['smtp_server'] = '127.0.0.1:588';
+        $config['smtp_host'] = '127.0.0.1:588';
       '';
     };
 
@@ -205,6 +215,7 @@ in {
       settings.main = let
         replaceDatabase = maps:
           pkgs.replaceVars maps {
+            inherit domain;
             inherit (rootCfg.accounts) database;
           };
       in {
@@ -225,7 +236,7 @@ in {
 
         # Encryption (server-side)
         smtpd_tls_mandatory_ciphers = "high";
-        smtpd_tls_mandatory_protocols = ["!SSLv2" "!SSLv3"];
+        smtpd_tls_mandatory_protocols = ">=TLSv1.2";
         smtpd_tls_chain_files = ["/var/lib/acme/mx.${domain}/full.pem"];
 
         smtpd_tls_session_cache_database = "btree:/var/lib/postfix/data/smtpd_tls_session_cache";
@@ -235,7 +246,7 @@ in {
 
         # encryption (client-side)
         smtp_tls_mandatory_ciphers = "high";
-        smtp_tls_mandatory_protocols = ["!SSLv2" "!SSLv3"];
+        smtp_tls_mandatory_protocols = ">=TLSv1.2";
 
         smtp_tls_session_cache_database = "btree:/var/lib/postfix/data/smtp_tls_session_cache";
         smtp_tls_session_cache_timeout = "600s";
@@ -273,8 +284,6 @@ in {
           # Check hostname validity
           "reject_invalid_helo_hostname"
           "reject_non_fqdn_helo_hostname"
-          # DNS check
-          "reject_unknown_helo_hostname"
           # Reject pipelining
           "reject_unauth_pipelining"
         ];
@@ -361,7 +370,9 @@ in {
         "redis.conf".source = ./rspamd/redis.conf;
         "classifier-bayes.conf".source = ./rspamd/classifier-bayes.conf;
         "greylist.conf".source = ./rspamd/greylist.conf;
+        "force_actions.conf".source = ./rspamd/force_actions.conf;
       };
+      localLuaRules = ./rspamd/rspamd.local.lua;
 
       workers = {
         controller = {
@@ -380,39 +391,196 @@ in {
 
     services.dovecot2 = {
       enable = true;
-      enablePop3 = false;
-      enableLmtp = true;
-      protocols = ["sieve"];
-      mailLocation = "mdbox:%h/mdbox";
       enablePAM = false;
-      sslCACert = "/var/lib/acme/imap.${domain}/full.pem";
-      sslServerCert = "/var/lib/acme/imap.${domain}/full.pem";
-      sslServerKey = "/var/lib/acme/imap.${domain}/full.pem";
 
-      mailUser = "dovecot2-mail";
-      mailGroup = "dovecot2-mail";
+      settings = {
+        dovecot_config_version = "2.4.5";
+        dovecot_storage_version = "2.4.0";
 
-      sieve.scripts = {
-        "before" = ./dovecot/sieve-before.d;
-        "system" = ./dovecot/sieve-system;
+        protocols = {
+          imap = true;
+          lmtp = true;
+          sieve = true;
+        };
+
+        # Users and paths
+        mail_driver = "mdbox";
+        mail_home = "${cfg.dataDir}/%{user | username}";
+        mail_path = "%{home}/mdbox";
+        mail_uid = "dovecot2-mail";
+        mail_gid = "dovecot2-mail";
+        mail_access_groups = ["rspamd"];
+        hostname = "imap.${domain}";
+        postmaster_address = "postmaster@${domain}";
+        # Start of "user-defined system IDs" on NixOS
+        first_valid_uid = 400;
+
+        # Pass user name unchanged to SQL.
+        auth_username_format = "%{user}";
+
+        # Limits
+        mail_max_userip_connections = 100;
+
+        # Plugins
+        mail_plugins = {
+          mail_compress = true;
+          fts = true;
+          fts_flatcurve = true;
+        };
+
+        # Encryption
+        ssl_server_cert_file = "/var/lib/acme/imap.${domain}/full.pem";
+        ssl_server_key_file = "/var/lib/acme/imap.${domain}/full.pem";
+        ssl_min_protocol = "TLSv1.2";
+        ssl_server_prefer_ciphers = "server";
+
+        # Authentication
+        # We use database instead of PAM because we need to get full users list.
+        sql_driver = "pgsql";
+        "pgsql /run/postgresql".parameters.dbname = rootCfg.accounts.database;
+
+        "passdb sql" = {
+          default_password_scheme = "CRYPT";
+          query = "SELECT name AS user, password FROM users WHERE name = '%{user | username}' AND enabled";
+        };
+
+        # Notice that we don't use "enabled"! All users, even disabled, should continue
+        # to receive mail.
+        "userdb sql" = {
+          query = "SELECT name AS username FROM users WHERE name = '%{user | username}'";
+          iterate_query = "SELECT name AS username FROM users";
+        };
+
+        # Services
+        service = [
+          {
+            _section.name = "lmtp";
+            "unix_listener lmtp" = {
+              mode = "0600";
+              user = "postfix";
+              group = "postfix";
+            };
+          }
+          {
+            _section.name = "auth";
+            user = "$SET:default_internal_user";
+            "unix_listener auth-postfix" = {
+              mode = "0600";
+              user = "postfix";
+              group = "postfix";
+            };
+          }
+          {
+            _section.name = "auth-worker";
+            user = "$SET:default_internal_user";
+          }
+        ];
+
+        # Protocols
+        "protocol lmtp" = {
+          mail_plugins.sieve = true;
+
+          "sieve_script before" = {
+            type = "before";
+            path = ./dovecot/sieve-before.d;
+          };
+        };
+
+        "protocol imap" = {
+          mail_plugins.imap_sieve = true;
+
+          # https://peterkieser.com/2011/03/25/androids-k-9-mail-battery-life-and-dovecots-push-imap/
+          # https://joshdata.wordpress.com/2014/08/09/how-bad-is-imap-idle/
+          imap_idle_notify_interval = "4 mins";
+        };
+
+        # Mail boxes
+        "namespace inbox" = {
+          separator = "/";
+          inbox = true;
+
+          "mailbox Trash" = {
+            auto = "create";
+            special_use = "\\Trash";
+            autoexpunge = "30d";
+          };
+          "mailbox Drafts" = {
+            auto = "create";
+            special_use = "\\Drafts";
+          };
+          "mailbox Sent" = {
+            auto = "create";
+            special_use = "\\Sent";
+          };
+          "mailbox Archive" = {
+            auto = "create";
+            special_use = "\\Archive";
+          };
+          "mailbox Spam" = {
+            auto = "create";
+            special_use = "\\Junk";
+            autoexpunge = "30d";
+          };
+        };
+
+        # Sieve
+        sieve_plugins = {
+          sieve_imapsieve = true;
+          sieve_extprograms = true;
+        };
+        sieve_global_extensions = {
+          "vnd.dovecot.pipe" = true;
+          "vnd.dovecot.environment" = true;
+        };
+        sieve_pipe_bin_dir = "${sieveBin}/bin";
+
+        "sieve_script personal" = {
+          driver = "file";
+          path = "~/sieve";
+          active_path = "~/.dovecot.sieve";
+        };
+
+        # From elsewhere to Spam folder
+        "mailbox Spam"."sieve_script report-spam" = {
+          type = "before";
+          cause = "copy";
+          path = ./dovecot/sieve-system/report-spam.sieve;
+        };
+
+        # From Spam folder to elsewhere
+        "imapsieve_from Spam"."sieve_script report-ham" = {
+          type = "before";
+          cause = "copy";
+          path = ./dovecot/sieve-system/report-ham.sieve;
+        };
+
+        # FTS
+        "fts flatcurve" = {};
+        fts_autoindex = true;
+        "language en" = {
+          default = true;
+          tokenizers = ["generic" "email-address"];
+          filters = ["lowercase"];
+        };
       };
+    };
 
-      extraConfig = let
-        dovecotSqlConf = pkgs.replaceVars ./dovecot/dovecot-sql.conf.ext {
-          inherit (rootCfg.accounts) database;
-        };
-        dovecotConf = pkgs.replaceVars ./dovecot/dovecot.conf {
-          inherit domain sieveBin dovecotSqlConf;
-          inherit (cfg) dataDir;
-        };
-      in "!include ${dovecotConf}";
+    systemd.services.dovecot-purge = {
+      description = "Purge expunged Dovecot mails";
+      requires = ["dovecot.service"];
+      after = ["dovecot.service"];
+      startAt = cfg.purgeAt;
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${getExe' config.services.dovecot2.package "doveadm"} purge -A";
+      };
     };
 
     systemd.services."mls-init-mail-database" = {
       description = "Initialize MyLittleServer's mail database.";
       wantedBy = ["multi-user.target"];
       after = ["postgresql.service" "mls-init-basic-database.service"];
-      before = ["postfix.service" "dovecot2.service"];
+      before = ["postfix.service" "dovecot.service"];
       path = [config.services.postgresql.package];
       serviceConfig = {
         Type = "oneshot";

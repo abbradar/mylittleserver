@@ -6,8 +6,10 @@ sql = {
 
 c2s_direct_tls_ports = { 5223 }
 
-http_max_content_size = 104857600
 http_external_url = "https://xmpp.@domain@/"
+http_paths = {
+    file_share = "/upload";
+}
 consider_bosh_secure = true
 consider_websocket_secure = true
 http_cors_override = {
@@ -30,12 +32,8 @@ muc_log_by_default = true
 muc_log_expires_after = "never"
 muc_log_presences = false
 
-http_upload_external_base_url = "https://xmpp.@domain@/upload/"
-http_upload_external_secret = "@uploadSecret@"
-http_upload_external_file_size_limit = 104857600
-
 turn_external_host = "turn.@domain@"
-turn_external_secret = "@turnSecret@"
+turn_external_secret = Credential("turn-secret")
 turn_external_tcp = true
 turn_external_tls_port = 5349
 

@@ -10,6 +10,7 @@
         ./basic
         ./db-auth
         ./mail
+        ./dns-proxy
         ./turn
         ./dav
         ./xmpp

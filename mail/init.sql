@@ -23,5 +23,6 @@ INSERT INTO aliases (source, destination) VALUES
     ('abuse@@domain@', 0),
     ('administrator@@domain@', 0),
     ('dmarc@@domain@', 0),
-    ('dmarc-forensics@@domain@', 0)
+    ('dmarc-forensics@@domain@', 0),
+    ('tlsrpt@@domain@', 0)
     ON CONFLICT DO NOTHING;

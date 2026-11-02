@@ -329,6 +329,7 @@ in {
 
         # Slow spammers down
         smtpd_helo_required = true;
+        smtpd_client_auth_rate_limit = mkDefault 10;
         smtpd_delay_reject = true;
         disable_vrfy_command = true;
 

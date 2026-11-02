@@ -17,6 +17,7 @@ with lib; let
     "presence_cache"
     "smacks"
     "presence_dedup"
+    "limit_auth"
   ];
 
   xmppSubdomains = [

@@ -111,7 +111,6 @@ in {
       package = pkgs.prosody.override {
         withOnlyInstalledCommunityModules =
           [
-            "auth_http"
             "http_muc_log"
             "pubsub_subscription"
           ]
@@ -166,7 +165,7 @@ in {
       httpsPorts = [];
       s2sSecureAuth = true;
       # FIXME: upstream a NixOS patch to allow this value.
-      # authentication = "http";
+      # authentication = "db_auth";
       virtualHosts.${domain} = {
         inherit domain;
         enabled = true;

@@ -1,4 +1,4 @@
-GRANT auth TO dovecot2;
+GRANT SELECT (name) ON users TO dovecot2;
 
 GRANT SELECT (id, name) ON users TO postfix;
 

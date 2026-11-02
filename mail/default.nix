@@ -154,6 +154,7 @@ in {
       dovecot = prev.dovecot.override {
         withPgSQL = true;
         withSQLite = false;
+        withLua = true;
       };
     });
 
@@ -432,6 +433,8 @@ in {
 
     mylittleserver.nginx.hstsHosts = ["mail.${domain}" "mta-sts.${domain}"];
 
+    mylittleserver.db-auth.allowedUsers = [config.services.dovecot2.settings.default_internal_user];
+
     # Local validating resolver, for DNS blocklists and DANE.
     mylittleserver.dns-proxy = {
       enable = true;
@@ -544,14 +547,14 @@ in {
         ssl_server_prefer_ciphers = "server";
 
         # Authentication
+        "passdb lua" = {
+          lua_file = "${./dovecot/db-auth.lua}";
+          lua_settings.db_auth_url = "http://127.0.0.1:12343";
+        };
+
         # We use database instead of PAM because we need to get full users list.
         sql_driver = "pgsql";
         "pgsql /run/postgresql".parameters.dbname = rootCfg.accounts.database;
-
-        "passdb sql" = {
-          default_password_scheme = "CRYPT";
-          query = "SELECT name AS user, password FROM users WHERE name = '%{user | username}' AND enabled";
-        };
 
         # Notice that we don't use "enabled"! All users, even disabled, should continue
         # to receive mail.

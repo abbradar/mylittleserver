@@ -14,7 +14,7 @@ from limits import RateLimitItem, RateLimitItemPerSecond
 from limits.aio.storage import MemoryStorage
 from limits.aio.strategies import MovingWindowRateLimiter
 
-from .auth_asyncpg import DbAuthAsyncPG as DbAuth
+from .auth import DbAuth
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,7 @@ _CHANGE_PASSWORD_HTML = resources.files("db_auth").joinpath("change_password.htm
 async def check_client_password(request: web.Request, user: str, password: str) -> bool:
     """Checks a password, limiting failures per client IP.
 
-    Callers that don't forward the client IP, like Prosody, connect from loopback and
-    aren't limited.
+    Callers that don't forward the client IP aren't limited.
     """
     auth: DbAuth = request.app["auth"]
     limiter: MovingWindowRateLimiter | None = request.app["failed_logins_limiter"]
@@ -42,35 +41,40 @@ async def check_client_password(request: web.Request, user: str, password: str) 
     return valid
 
 
-def bool_to_reply(b: bool) -> web.Response:
-    return web.Response(text="true" if b else "false")
-
-
-async def not_implemented_route(request: web.Request) -> web.Response:
-    raise web.HTTPNotImplemented()
-
-
-async def prosody_check_password_route(request: web.Request) -> web.Response:
-    user = request.query.get("user")
-    password = request.query.get("pass")
+async def check_password_route(request: web.Request) -> web.Response:
+    data = await request.post()
+    user = data.get("user")
+    password = data.get("password")
     if not isinstance(user, str) or not isinstance(password, str):
         raise web.HTTPBadRequest()
-    auth: DbAuth = request.app["auth"]
-    return bool_to_reply(await auth.check_password(user, password))
+    valid = await check_client_password(request, user, password)
+    return web.json_response({"valid": valid}, status=200 if valid else 403)
 
 
-async def prosody_user_exists_route(request: web.Request) -> web.Response:
+async def user_exists_route(request: web.Request) -> web.Response:
     user = request.query.get("user")
     if not isinstance(user, str):
         raise web.HTTPBadRequest()
     auth: DbAuth = request.app["auth"]
-    return bool_to_reply(await auth.user_exists(user))
+    exists = await auth.user_exists(user)
+    return web.json_response({"exists": exists}, status=200 if exists else 404)
 
 
-async def prosody_set_password_route(request: web.Request) -> web.Response:
+async def scram_sha_256_route(request: web.Request) -> web.Response:
+    user = request.query.get("user")
+    if not isinstance(user, str):
+        raise web.HTTPBadRequest()
+    auth: DbAuth = request.app["auth"]
+    scram = await auth.get_scram_sha256(user)
+    if scram is None:
+        raise web.HTTPNotFound()
+    return web.json_response({"scram_sha256": scram})
+
+
+async def set_password_route(request: web.Request) -> web.Response:
     data = await request.post()
     user = data.get("user")
-    new_password = data.get("pass")
+    new_password = data.get("password")
     if not isinstance(user, str) or not isinstance(new_password, str):
         raise web.HTTPBadRequest()
     auth: DbAuth = request.app["auth"]
@@ -153,7 +157,7 @@ def create_app(
     auth: DbAuth,
     *,
     failed_logins_limit: RateLimitItem | None = None,
-    allow_set_password: bool = False,
+    privileged: bool = False,
 ) -> web.Application:
     app = web.Application(middlewares=[XForwardedFiltered({"127.0.0.1", "::1"}).middleware])
     app["auth"] = auth
@@ -162,16 +166,14 @@ def create_app(
         MovingWindowRateLimiter(MemoryStorage()) if failed_logins_limit is not None else None
     )
 
-    app.router.add_route("POST", "/prosody/register", not_implemented_route)
-    app.router.add_route("GET", "/prosody/check_password", prosody_check_password_route)
-    app.router.add_route("GET", "/prosody/user_exists", prosody_user_exists_route)
-    if allow_set_password:
-        my_prosody_set_password_route = prosody_set_password_route
-    else:
-        my_prosody_set_password_route = not_implemented_route
-    app.router.add_route("POST", "/prosody/set_password", my_prosody_set_password_route)
-    app.router.add_route("POST", "/prosody/remove_user", not_implemented_route)
+    # For our own plugins.
+    app.router.add_route("POST", "/check_password", check_password_route)
+    app.router.add_route("GET", "/user_exists", user_exists_route)
+    if privileged:
+        app.router.add_route("GET", "/scram_sha_256", scram_sha_256_route)
+        app.router.add_route("POST", "/set_password", set_password_route)
 
+    # For existing protocols.
     app.router.add_route("POST", "/oauth2", oauth2_route)
 
     app.router.add_route("GET", "/nginx/check", nginx_check_route)
@@ -220,16 +222,13 @@ async def amain():
         )
 
     async with TaskGroup() as group:
-        # Access logs are disabled: Prosody passes passwords in query strings.
         if args.port:
             app = create_app(auth, failed_logins_limit=failed_logins_limit)
             group.create_task(
                 web._run_app(app, host=args.host, port=args.port, access_log=None)
             )
         if args.unsafe_port:
-            unsafe_app = create_app(
-                auth, failed_logins_limit=failed_logins_limit, allow_set_password=True
-            )
+            unsafe_app = create_app(auth, failed_logins_limit=failed_logins_limit, privileged=True)
             group.create_task(
                 web._run_app(
                     unsafe_app, host=args.host, port=args.unsafe_port, access_log=None

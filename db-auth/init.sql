@@ -1,1 +1,1 @@
-GRANT auth_update TO "db-auth";
+GRANT auth TO "db-auth";

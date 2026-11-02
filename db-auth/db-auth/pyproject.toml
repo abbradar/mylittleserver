@@ -20,12 +20,10 @@ service = [
     "aiohttp>=3.9.0",
     "asyncpg>=0.29.0",
 ]
-matrix = [
-    "psycopg2>=2.9.0",
-]
 
 [project.scripts]
 db_auth = "db_auth.__main__:main"
+db-auth-user = "db_auth.user:main"
 
 [tool.setuptools.package-data]
 db_auth = ["*.html"]

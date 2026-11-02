@@ -67,6 +67,7 @@ in {
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver = {
       turn.enable = true;
+      db-auth.allowedUsers = ["matrix-synapse"];
       nginx.hstsHosts = ["matrix.${domain}"];
 
       backup = {
@@ -130,7 +131,7 @@ in {
           {
             module = "db_auth.matrix.DBAuthProvider";
             config = {
-              database = rootCfg.accounts.database;
+              url = "http://127.0.0.1:12343";
             };
           }
         ];

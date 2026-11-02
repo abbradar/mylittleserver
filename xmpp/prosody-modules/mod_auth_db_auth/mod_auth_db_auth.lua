@@ -73,8 +73,8 @@ function provider.delete_user()
 	return nil, "Not supported";
 end
 
--- Clients can't fall back to PLAIN once they pick SCRAM, so offer it only when the account
--- named in the stream header has SCRAM credentials. A PLAIN login creates them.
+-- LEGACY: clients can't fall back to PLAIN once they pick SCRAM, so offer it only when the
+-- account named in the stream header has SCRAM credentials. A PLAIN login creates them.
 module:hook("stream-features", function (event)
 	local session = event.origin;
 	local from = event.stream and event.stream.from;

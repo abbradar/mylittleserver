@@ -78,8 +78,11 @@ async def set_password_route(request: web.Request) -> web.Response:
     if not isinstance(user, str) or not isinstance(new_password, str):
         raise web.HTTPBadRequest()
     auth: DbAuth = request.app["auth"]
-    if not await auth.set_password(user, new_password):
-        raise web.HTTPNotFound(text="User not found")
+    try:
+        if not await auth.set_password(user, new_password):
+            raise web.HTTPNotFound(text="User not found")
+    except ValueError as e:
+        raise web.HTTPBadRequest(text=str(e))
     return web.Response(status=201)
 
 
@@ -148,8 +151,11 @@ async def change_password_post_route(request: web.Request) -> web.Response:
     auth: DbAuth = request.app["auth"]
     if not await check_client_password(request, user, old_password):
         return _change_password_page("Wrong user or password.")
-    if not await auth.set_password(user, new_password):
-        raise RuntimeError(f"User {user} has vanished")
+    try:
+        if not await auth.set_password(user, new_password):
+            raise RuntimeError(f"User {user} has vanished")
+    except ValueError:
+        return _change_password_page("The new password contains characters that aren't allowed.")
     return _change_password_page("Password changed successfully.")
 
 

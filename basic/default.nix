@@ -101,6 +101,15 @@ in {
         };
       };
 
+      nginx.hstsHosts = mkOption {
+        type = types.listOf types.str;
+        internal = true;
+        default = [];
+        description = ''
+          HTTPS-only virtual hosts that should send a Strict-Transport-Security header.
+        '';
+      };
+
       dnsRecords = mkOption {
         type = types.lines;
         internal = true;
@@ -116,6 +125,8 @@ in {
 
   config = mkIf cfg.enable {
     mylittleserver.backup.databases = [cfg.accounts.database];
+
+    mylittleserver.nginx.hstsHosts = [domain];
 
     mylittleserver.dnsRecords = mkBefore ''
       ;; "@" needs A and/or AAAA records.
@@ -183,6 +194,13 @@ in {
             };
           };
         }
+        (genAttrs (unique cfg.nginx.hstsHosts) (host: {
+          # Merge so that locations adding their own headers don't drop it.
+          extraConfig = ''
+            add_header_inherit merge;
+            add_header Strict-Transport-Security "max-age=31536000" always;
+          '';
+        }))
         (mapAttrs (host: opts: {
             onlySSL = false;
             forceSSL = false;

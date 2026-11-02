@@ -4,13 +4,42 @@ from asyncio import TaskGroup
 import base64
 import html
 from importlib import resources
+import ipaddress
+import logging
 
 from aiohttp import web
+from aiohttp_remotes import XForwardedFiltered
 import asyncpg
+from limits import RateLimitItem, RateLimitItemPerSecond
+from limits.aio.storage import MemoryStorage
+from limits.aio.strategies import MovingWindowRateLimiter
 
 from .auth_asyncpg import DbAuthAsyncPG as DbAuth
 
+logger = logging.getLogger(__name__)
+
 _CHANGE_PASSWORD_HTML = resources.files("db_auth").joinpath("change_password.html").read_text()
+
+
+async def check_client_password(request: web.Request, user: str, password: str) -> bool:
+    """Checks a password, limiting failures per client IP.
+
+    Callers that don't forward the client IP, like Prosody, connect from loopback and
+    aren't limited.
+    """
+    auth: DbAuth = request.app["auth"]
+    limiter: MovingWindowRateLimiter | None = request.app["failed_logins_limiter"]
+    limit: RateLimitItem | None = request.app["failed_logins_limit"]
+    client = request.remote
+    if limiter is None or limit is None or client is None or ipaddress.ip_address(client).is_loopback:
+        return await auth.check_password(user, password)
+    if not await limiter.test(limit, client):
+        logger.warning("Too many failed logins from %s, refusing login for %s", client, user)
+        return False
+    valid = await auth.check_password(user, password)
+    if not valid:
+        await limiter.hit(limit, client)
+    return valid
 
 
 def bool_to_reply(b: bool) -> web.Response:
@@ -72,8 +101,7 @@ async def oauth2_route(request: web.Request) -> web.Response:
         return web.json_response({"error": "unsupported_grant_type"}, status=400)
     if not isinstance(user, str) or not isinstance(password, str):
         return web.json_response({"error": "invalid_request"}, status=400)
-    auth: DbAuth = request.app["auth"]
-    if not await auth.check_password(user, password):
+    if not await check_client_password(request, user, password):
         return web.json_response({"error": "invalid_grant"}, status=400)
     # Dummy response.
     return web.json_response(
@@ -93,8 +121,7 @@ async def nginx_check_route(request: web.Request) -> web.Response:
         user, password = decoded.split(":", 1)
     except (ValueError, UnicodeDecodeError):
         raise web.HTTPUnauthorized(headers={"WWW-Authenticate": "Basic"})
-    auth: DbAuth = request.app["auth"]
-    if not await auth.check_password(user, password):
+    if not await check_client_password(request, user, password):
         raise web.HTTPUnauthorized(headers={"WWW-Authenticate": "Basic"})
     return web.Response(status=200)
 
@@ -115,16 +142,25 @@ async def change_password_post_route(request: web.Request) -> web.Response:
     ):
         return _change_password_page("All fields are required.")
     auth: DbAuth = request.app["auth"]
-    if not await auth.check_password(user, old_password):
+    if not await check_client_password(request, user, old_password):
         return _change_password_page("Wrong user or password.")
     if not await auth.set_password(user, new_password):
         raise RuntimeError(f"User {user} has vanished")
     return _change_password_page("Password changed successfully.")
 
 
-def create_app(auth: DbAuth, *, allow_set_password: bool = False) -> web.Application:
-    app = web.Application()
+def create_app(
+    auth: DbAuth,
+    *,
+    failed_logins_limit: RateLimitItem | None = None,
+    allow_set_password: bool = False,
+) -> web.Application:
+    app = web.Application(middlewares=[XForwardedFiltered({"127.0.0.1", "::1"}).middleware])
     app["auth"] = auth
+    app["failed_logins_limit"] = failed_logins_limit
+    app["failed_logins_limiter"] = (
+        MovingWindowRateLimiter(MemoryStorage()) if failed_logins_limit is not None else None
+    )
 
     app.router.add_route("POST", "/prosody/register", not_implemented_route)
     app.router.add_route("GET", "/prosody/check_password", prosody_check_password_route)
@@ -156,23 +192,44 @@ async def amain():
     argparser.add_argument("-H", "--host", default="localhost")
     argparser.add_argument("--port", type=int)
     argparser.add_argument("--unsafe-port", type=int)
+    argparser.add_argument(
+        "--failed-logins-burst",
+        type=int,
+        default=5,
+        help="failed logins allowed per client IP within the period (0 disables)",
+    )
+    argparser.add_argument(
+        "--failed-logins-period",
+        type=int,
+        default=30,
+        help="period in seconds for the failed logins limit",
+    )
     args = argparser.parse_args()
+
+    logging.basicConfig(level=logging.INFO)
 
     if args.port is None and args.unsafe_port is None:
         raise RuntimeError("At least one of port or an unsafe port must be specified.")
 
     pool = await asyncpg.create_pool(min_size=1, max_size=5, database=args.database, user=args.user)
     auth = DbAuth(pool)
+    failed_logins_limit = None
+    if args.failed_logins_burst > 0:
+        failed_logins_limit = RateLimitItemPerSecond(
+            args.failed_logins_burst, args.failed_logins_period
+        )
 
     async with TaskGroup() as group:
         # Access logs are disabled: Prosody passes passwords in query strings.
         if args.port:
-            app = create_app(auth)
+            app = create_app(auth, failed_logins_limit=failed_logins_limit)
             group.create_task(
                 web._run_app(app, host=args.host, port=args.port, access_log=None)
             )
         if args.unsafe_port:
-            unsafe_app = create_app(auth, allow_set_password=True)
+            unsafe_app = create_app(
+                auth, failed_logins_limit=failed_logins_limit, allow_set_password=True
+            )
             group.create_task(
                 web._run_app(
                     unsafe_app, host=args.host, port=args.unsafe_port, access_log=None

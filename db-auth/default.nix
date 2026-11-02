@@ -14,25 +14,11 @@ with lib; let
     withMatrix = false;
   };
 
-  makeFirewallRules = port: users: let
+  restrictPort = port: users: let
     allUsers = unique (["root"] ++ users);
-  in {
-    extraCommands = ''
-      ${concatMapStringsSep "\n" (user: ''
-          ip46tables -A OUTPUT -o lo -m owner --uid-owner ${escapeShellArg user} -p tcp -m tcp --dport ${toString port} -j ACCEPT
-        '')
-        allUsers}
-      ip46tables -A OUTPUT -o lo -p tcp -m tcp --dport ${toString port} -j REJECT
-    '';
-
-    extraStopCommands = ''
-      ${concatMapStringsSep "\n" (user: ''
-          ip46tables -D OUTPUT -o lo -m owner --uid-owner ${escapeShellArg user} -p tcp -m tcp --dport ${toString port} -j ACCEPT 2>/dev/null || true
-        '')
-        allUsers}
-      ip46tables -D OUTPUT -o lo -p tcp -m tcp --dport ${toString port} -j REJECT 2>/dev/null || true
-    '';
-  };
+  in ''
+    oifname "lo" tcp dport ${toString port} meta skuid != { ${concatStringsSep ", " allUsers} } reject with tcp reset
+  '';
 in {
   options = {
     mylittleserver.db-auth = {
@@ -50,6 +36,25 @@ in {
         description = ''
           Linux users allowed to authenticate *and reset passwords* via HTTP.
         '';
+      };
+
+      failedLogins = {
+        burst = mkOption {
+          type = types.ints.unsigned;
+          default = 5;
+          description = ''
+            Failed logins allowed per client IP before further attempts are refused.
+            Applies to callers that pass the client IP. 0 disables the limit.
+          '';
+        };
+
+        period = mkOption {
+          type = types.ints.positive;
+          default = 30;
+          description = ''
+            Period in seconds in which at most {option}`burst` failed logins are allowed.
+          '';
+        };
       };
 
       ui.enable = mkEnableOption "exposing the password change UI via nginx";
@@ -73,10 +78,29 @@ in {
 
   config = mkMerge [
     (mkIf (rootCfg.enable && (cfg.allowedUsers != [] || cfg.allowedUnsafeUsers != [])) {
-      networking.firewall = mkMerge [
-        (mkIf (cfg.allowedUsers != []) (makeFirewallRules 12343 cfg.allowedUsers))
-        (mkIf (cfg.allowedUnsafeUsers != []) (makeFirewallRules 12344 cfg.allowedUnsafeUsers))
+      assertions = [
+        {
+          assertion = config.networking.nftables.enable;
+          message = "mylittleserver.db-auth restricts access to its ports with nftables; enable networking.nftables.";
+        }
       ];
+
+      networking.nftables = {
+        tables.mylittleserver-db-auth = {
+          family = "inet";
+          content = ''
+            chain output {
+              type filter hook output priority filter; policy accept;
+              ${optionalString (cfg.allowedUsers != []) (restrictPort 12343 cfg.allowedUsers)}
+              ${optionalString (cfg.allowedUnsafeUsers != []) (restrictPort 12344 cfg.allowedUnsafeUsers)}
+            }
+          '';
+        };
+        # The build sandbox doesn't have our users.
+        preCheckRuleset = ''
+          sed -E 's/meta skuid != \{[^}]*\}/meta skuid != { root }/' -i ruleset.conf
+        '';
+      };
 
       systemd.services = {
         "mls-db-auth" = {
@@ -93,6 +117,12 @@ in {
               ]
               ++ optionals (cfg.allowedUsers != []) ["--port" "12343"]
               ++ optionals (cfg.allowedUnsafeUsers != []) ["--unsafe-port" "12344"]
+              ++ [
+                "--failed-logins-burst"
+                (toString cfg.failedLogins.burst)
+                "--failed-logins-period"
+                (toString cfg.failedLogins.period)
+              ]
               ++ [rootCfg.accounts.database]
             );
             Restart = "on-failure";
@@ -130,9 +160,10 @@ in {
 
       services.nginx.virtualHosts = genAttrs rootCfg.nginx.authDomains (host: {
         locations."= /internal/auth" = {
+          proxyPass = "http://127.0.0.1:12343/nginx/check";
+          recommendedProxySettings = true;
           extraConfig = ''
             internal;
-            proxy_pass http://127.0.0.1:12343/nginx/check;
             proxy_pass_request_body off;
             proxy_set_header Content-Length "";
           '';
@@ -145,6 +176,7 @@ in {
 
       services.nginx.virtualHosts.${domain}.locations."/ui/" = {
         proxyPass = "http://127.0.0.1:12343";
+        recommendedProxySettings = true;
       };
     })
   ];

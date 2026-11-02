@@ -32,6 +32,15 @@ muc_log_by_default = true
 muc_log_expires_after = "never"
 muc_log_presences = false
 
+use_dane = true
+unbound = {
+    trustfile = "@dnsRootKey@";
+}
+
+anti_spam_services = { "xmppbl.org" }
+report_forward_to = { "submit@reports.xmppbl.org" }
+report_forward_to_origin = true
+
 turn_external_host = "turn.@domain@"
 turn_external_secret = Credential("turn-secret")
 turn_external_tcp = true
@@ -40,11 +49,12 @@ turn_external_tls_port = 5349
 proxy65_ports = { 7777 }
 
 contact_info = {
-    abuse = { "mailto:abuse@@domain@" };
+    abuse = { "mailto:abuse@@domain@", "xmpp:admin@@domain@" };
     admin = { "mailto:admin@@domain@", "xmpp:admin@@domain@" };
 }
 
 Component "conference.@domain@" "muc"
+    restrict_room_creation = "local"
     max_history_messages = 50
     modules_enabled = {
         "muc_mam";

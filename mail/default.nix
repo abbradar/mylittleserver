@@ -14,6 +14,32 @@ with lib; let
 
   dkimPublicKey = replaceStrings ["\n"] [""] cfg.dkim.publicKey;
 
+  # DNS blocklists like Spamhaus refuse queries from large public
+  # resolvers. Resolve the blocklist zones ourselves instead.
+  dnsBlocklistPolicy =
+    pkgs.runCommand "kresd-dns-blocklists.lua" {
+      nativeBuildInputs = [config.services.rspamd.package pkgs.jq];
+    } ''
+      rspamadm --var=DBDIR="$TMPDIR" --var=RUNDIR="$TMPDIR" \
+        --var=LOCAL_CONFDIR=${config.environment.etc.rspamd.source} \
+        configdump -j -c ${config.services.rspamd.package}/etc/rspamd/rspamd.conf rbl > rbl.json
+      jq -r '
+        [.rbls[] | select(.enabled != false) | .rbl | strings] | unique
+        | "policy.add(policy.suffix(policy.PASS, policy.todnames({\(map("\u0027\(.)\u0027") | join(", "))})))"
+      ' rbl.json > $out
+    '';
+
+  mtaStsPolicyText = ''
+    version: STSv1
+    mode: enforce
+    mx: mx.${domain}
+    max_age: 604800
+  '';
+
+  mtaStsPolicy = pkgs.writeText "mta-sts.txt" mtaStsPolicyText;
+
+  mtaStsId = substring 0 16 (builtins.hashString "sha256" mtaStsPolicyText);
+
   sieveBin = pkgs.symlinkJoin {
     name = "sieve-bin";
     paths = [
@@ -43,6 +69,14 @@ in {
         '';
       };
 
+      rspamdDataDir = mkOption {
+        type = types.path;
+        default = "/var/lib/mylittleserver/redis-rspamd";
+        description = ''
+          rspamd Redis data directory, which holds the learned Bayes statistics.
+        '';
+      };
+
       purgeAt = mkOption {
         type = types.str;
         default = "12:00";
@@ -61,6 +95,14 @@ in {
       };
 
       dkim = {
+        selector = mkOption {
+          type = types.str;
+          default = "mail";
+          description = ''
+            DKIM selector.
+          '';
+        };
+
         publicKey = mkOption {
           type = types.str;
           description = ''
@@ -80,7 +122,7 @@ in {
 
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver.backup = {
-      paths = [cfg.dataDir];
+      paths = [cfg.dataDir cfg.rspamdDataDir];
       databases = ["roundcube"];
       after = ["dovecot-purge.service"];
     };
@@ -90,10 +132,18 @@ in {
       smtp CNAME ${domain}.
       imap CNAME ${domain}.
       mail CNAME ${domain}.
+      mta-sts CNAME ${domain}.
       @ MX 10 mx.${domain}.
       @ TXT "v=spf1 mx -all"
-      mail._domainkey TXT "v=DKIM1; h=sha256; s=email; p=${dkimPublicKey}; t=s"
-      _dmarc TXT "v=DMARC1; p=reject; rua=mailto:dmarc@${domain}; fo=1"
+      ${cfg.dkim.selector}._domainkey TXT "v=DKIM1; h=sha256; s=email; p=${dkimPublicKey}; t=s"
+      _dmarc TXT "v=DMARC1; p=reject; rua=mailto:dmarc@${domain}"
+      _mta-sts TXT "v=STSv1; id=${mtaStsId}"
+      _smtp._tls TXT "v=TLSRPTv1; rua=mailto:tlsrpt@${domain}"
+      _submissions._tcp SRV 0 1 465 smtp.${domain}.
+      _submission._tcp SRV 0 1 587 smtp.${domain}.
+      _imaps._tcp SRV 0 1 993 imap.${domain}.
+      _imap._tcp SRV 0 1 143 imap.${domain}.
+      _sieve._tcp SRV 0 1 4190 imap.${domain}.
     '';
 
     nixpkgs.overlays = singleton (final: prev: {
@@ -143,12 +193,22 @@ in {
           client_max_body_size ${toString cfg.maxSizeMb}m;
         '';
       };
+      "mta-sts.${domain}" = {
+        forceSSL = true;
+        enableACME = true;
+        locations."= /.well-known/mta-sts.txt" = {
+          alias = mtaStsPolicy;
+          extraConfig = ''
+            types { } default_type "text/plain; charset=utf-8";
+          '';
+        };
+      };
     };
 
     services.roundcube = {
       enable = true;
       hostName = "mail.${domain}";
-      plugins = ["managesieve"];
+      plugins = ["managesieve" "markasjunk"];
       maxAttachmentSize = cfg.maxSizeMb;
       database.dbname = "roundcube";
       extraConfig = ''
@@ -156,13 +216,14 @@ in {
         $config['username_domain_forced'] = true;
         # Use an lo-bound SMTP with no TLS requirement.
         $config['smtp_host'] = '127.0.0.1:588';
+        $config['junk_mbox'] = 'Spam';
       '';
     };
 
     services.postfix = let
       commonSubmissionOptions = {
         syslog_name = "postfix/submission";
-        smtp_helo_name = "smtp.${domain}";
+        cleanup_service_name = "submission-cleanup";
         smtpd_sasl_auth_enable = "yes";
         smtpd_helo_restrictions = "";
         smtpd_client_restrictions = "$mua_client_restrictions";
@@ -198,6 +259,15 @@ in {
         };
       submissionsOptions = commonSubmissionOptions;
 
+      # Strips the sender's client details from submitted mail.
+      settings.master.submission-cleanup = {
+        type = "unix";
+        private = false;
+        maxproc = 0;
+        command = "cleanup";
+        args = ["-o" "header_checks=pcre:${./postfix/header_checks.cf}"];
+      };
+
       # For Roundcube, no TLS required.
       settings.master."127.0.0.1:588" = {
         type = "inet";
@@ -224,6 +294,8 @@ in {
 
         # Core things
         myhostname = "mx.${domain}";
+        # Matches the PTR record.
+        smtp_helo_name = domain;
         mydestination = [];
         mynetworks_style = "host";
         virtual_mailbox_domains = [domain];
@@ -231,7 +303,6 @@ in {
         virtual_alias_maps = ["pgsql:${replaceDatabase ./postfix/alias_maps.cf}"];
         smtpd_sender_login_maps = ["pgsql:${replaceDatabase ./postfix/login_maps.cf}"];
         virtual_mailbox_maps = ["pgsql:${replaceDatabase ./postfix/recipient_maps.cf}"];
-        header_checks = ["pcre:${./postfix/header_checks.cf}"];
         virtual_transport = "lmtp:unix:/run/dovecot2/lmtp";
 
         # Encryption (server-side)
@@ -247,6 +318,9 @@ in {
         # encryption (client-side)
         smtp_tls_mandatory_ciphers = "high";
         smtp_tls_mandatory_protocols = ">=TLSv1.2";
+        smtp_dns_support_level = "dnssec";
+        smtp_tls_security_level = "dane";
+        smtp_tls_loglevel = mkDefault 1;
 
         smtp_tls_session_cache_database = "btree:/var/lib/postfix/data/smtp_tls_session_cache";
         smtp_tls_session_cache_timeout = "600s";
@@ -258,6 +332,7 @@ in {
 
         # Slow spammers down
         smtpd_helo_required = true;
+        smtpd_client_auth_rate_limit = mkDefault 10;
         smtpd_delay_reject = true;
         disable_vrfy_command = true;
 
@@ -342,9 +417,27 @@ in {
       };
     };
 
+    # Force our DNS proxy.
+    systemd.services.postfix.serviceConfig.BindReadOnlyPaths = let
+      resolvConf = pkgs.writeText "postfix-resolv.conf" ''
+        nameserver ${config.mylittleserver.dns-proxy.address}
+        options trust-ad edns0
+      '';
+    in ["${resolvConf}:/etc/resolv.conf"];
+
     services.postsrsd = {
       enable = true;
       settings.domains = [domain];
+    };
+
+    mylittleserver.nginx.hstsHosts = ["mail.${domain}" "mta-sts.${domain}"];
+
+    # Local validating resolver, for DNS blocklists and DANE.
+    mylittleserver.dns-proxy = {
+      enable = true;
+      extraConfig = ''
+        dofile('${dnsBlocklistPolicy}')
+      '';
     };
 
     services.redis.servers.rspamd = {
@@ -352,8 +445,14 @@ in {
       port = 0;
       bind = null;
       user = "rspamd";
-      settings.maxmemory = "128mb";
+      settings = {
+        dir = mkForce cfg.rspamdDataDir;
+        maxmemory = "128mb";
+        maxmemory-policy = "volatile-ttl";
+      };
     };
+
+    systemd.services.redis-rspamd.serviceConfig.ReadWritePaths = [cfg.rspamdDataDir];
 
     services.rspamd = {
       enable = true;
@@ -361,6 +460,7 @@ in {
       locals = {
         "dkim_signing.conf".source = pkgs.replaceVars ./rspamd/dkim_signing.conf {
           inherit domain;
+          dkimSelector = cfg.dkim.selector;
           dkimPrivateKeyPath = cfg.dkim.privateKeyPath;
         };
         "milter_headers.conf".source = ./rspamd/milter_headers.conf;
@@ -371,6 +471,12 @@ in {
         "classifier-bayes.conf".source = ./rspamd/classifier-bayes.conf;
         "greylist.conf".source = ./rspamd/greylist.conf;
         "force_actions.conf".source = ./rspamd/force_actions.conf;
+        "dmarc.conf".source = ./rspamd/dmarc.conf;
+        "options.inc".text = ''
+          dns {
+            nameserver = ["${config.mylittleserver.dns-proxy.address}"];
+          }
+        '';
       };
       localLuaRules = ./rspamd/rspamd.local.lua;
 
@@ -409,7 +515,9 @@ in {
         mail_path = "%{home}/mdbox";
         mail_uid = "dovecot2-mail";
         mail_gid = "dovecot2-mail";
-        mail_access_groups = ["rspamd"];
+        # `postdrop` lets Sieve redirects and vacation replies queue mail.
+        mail_access_groups = ["rspamd" "postdrop"];
+        sendmail_path = "${config.services.postfix.package}/bin/sendmail";
         hostname = "imap.${domain}";
         postmaster_address = "postmaster@${domain}";
         # Start of "user-defined system IDs" on NixOS
@@ -427,6 +535,7 @@ in {
           fts = true;
           fts_flatcurve = true;
         };
+        mail_compress_write_method = "zstd";
 
         # Encryption
         ssl_server_cert_file = "/var/lib/acme/imap.${domain}/full.pem";
@@ -565,6 +674,26 @@ in {
       };
     };
 
+    services.fail2ban = {
+      enable = true;
+      jails = let
+        mailPorts = "smtp,submission,submissions,imap,imaps,sieve";
+      in {
+        postfix-sasl.settings = {
+          filter = "postfix[mode=auth]";
+          port = mailPorts;
+        };
+        dovecot.settings = {
+          filter = "dovecot";
+          port = mailPorts;
+        };
+        roundcube-auth.settings = {
+          filter = "roundcube-auth";
+          port = "http,https";
+        };
+      };
+    };
+
     systemd.services.dovecot-purge = {
       description = "Purge expunged Dovecot mails";
       requires = ["dovecot.service"];
@@ -636,6 +765,7 @@ in {
 
     systemd.tmpfiles.rules = [
       "d '${cfg.dataDir}' 0700 dovecot2-mail dovecot2-mail - -"
+      "d '${cfg.rspamdDataDir}' 0700 rspamd rspamd - -"
     ];
 
     users = {

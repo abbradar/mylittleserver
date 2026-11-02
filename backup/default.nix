@@ -84,6 +84,15 @@ in {
       '';
     };
 
+    exclude = mkOption {
+      type = types.listOf types.str;
+      default = [];
+      internal = true;
+      description = ''
+        restic exclude patterns for {option}`paths`.
+      '';
+    };
+
     after = mkOption {
       type = types.listOf types.str;
       default = [];
@@ -100,7 +109,7 @@ in {
         mylittleserver =
           common
           // {
-            inherit (cfg) pruneOpts timerConfig;
+            inherit (cfg) pruneOpts timerConfig exclude;
             initialize = true;
             paths = cfg.paths;
           };

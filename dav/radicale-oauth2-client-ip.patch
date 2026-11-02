@@ -1,0 +1,46 @@
+--- a/radicale/config.py
++++ b/radicale/config.py
+@@ -487,6 +487,10 @@
+             "value": "",
+             "help": "OAuth2 client secret",
+             "type": str}),
++        ("oauth2_client_ip_header", {
++            "value": "",
++            "help": "header to pass the client IP to the OAuth2 token endpoint in (e.g. X-Forwarded-For), empty to not pass it",
++            "type": str}),
+         ("pam_group_membership", {
+             "value": "",
+             "help": "PAM group user should be member of",
+--- a/radicale/auth/oauth2.py
++++ b/radicale/auth/oauth2.py
+@@ -36,12 +36,17 @@
+         self._endpoint = configuration.get("auth", "oauth2_token_endpoint")
+         self._client_id = configuration.get("auth", "oauth2_client_id")
+         self._client_secret = configuration.get("auth", "oauth2_client_secret")
++        self._client_ip_header = configuration.get("auth", "oauth2_client_ip_header")
++        remote_ip_source = configuration.get("auth", "remote_ip_source")
++        self._use_x_remote_addr = remote_ip_source == "X-Remote-Addr"
+         if not self._endpoint:
+             logger.error("auth.oauth2_token_endpoint URL missing")
+             raise RuntimeError("OAuth2 token endpoint URL is required")
+         logger.info("auth OAuth2 token endpoint: %s", self._endpoint)
++        if self._client_ip_header:
++            logger.info("auth OAuth2 client IP header: %s", self._client_ip_header)
+ 
+-    def _login(self, login, password) -> str:
++    def _login_ext(self, login, password, context) -> str:
+         """Validate credentials.
+         Sends login credentials to oauth token endpoint and checks that a token is returned
+         """
+@@ -57,6 +62,11 @@
+                 req_params["client_secret"] = self._client_secret
+ 
+             req_headers = {"Content-Type": "application/x-www-form-urlencoded"}
++            if self._client_ip_header:
++                if self._use_x_remote_addr and context.x_remote_addr:
++                    req_headers[self._client_ip_header] = context.x_remote_addr
++                elif context.remote_addr:
++                    req_headers[self._client_ip_header] = context.remote_addr
+             response = requests.post(
+                 self._endpoint, data=req_params, headers=req_headers
+             )

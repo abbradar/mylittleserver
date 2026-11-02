@@ -52,13 +52,9 @@ with lib; let
     };
   };
 
-  mailuserBins = makeBinPath [pkgs.mkpasswd pkgs.pwgen config.services.postgresql.package];
-
-  mailuser = pkgs.writers.writeBashBin "mailuser" ''
-    export PATH=${escapeShellArg mailuserBins}
-    database=${escapeShellArg cfg.accounts.database}
-    source ${./mailuser.sh}
-  '';
+  dbAuth = pkgs.python3.pkgs.callPackage ../db-auth/db-auth {
+    withMatrix = false;
+  };
 in {
   options = {
     mylittleserver = {
@@ -138,9 +134,7 @@ in {
       443 # HTTPS
     ];
 
-    environment.systemPackages = with pkgs; [
-      mailuser
-    ];
+    environment.systemPackages = [dbAuth];
 
     services.postgresql = {
       enable = true;
@@ -150,10 +144,6 @@ in {
       ensureUsers = [
         {
           name = "auth";
-          ensureClauses.login = false;
-        }
-        {
-          name = "auth_update";
           ensureClauses.login = false;
         }
       ];

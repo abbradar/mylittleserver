@@ -1,25 +1,21 @@
 import logging
 
-import psycopg2.pool
-from twisted.internet.threads import deferToThread
+from synapse.api.errors import HttpResponseException
 from synapse.module_api import JsonDict, ModuleApi
-
-from .auth_psycopg2 import DbAuthPsycopg2 as DbAuth
 
 logger = logging.getLogger(__name__)
 
 
 class DBAuthProvider:
     _api: ModuleApi
-    _auth: DbAuth
+    _url: str
 
     def __init__(self, config: dict[str, object], api: ModuleApi):
         self._api = api
-        database = config.get("database", "mylittleserver")
-        if not isinstance(database, str):
-            raise TypeError(f"database must be a string, got {type(database).__name__}")
-        pool = psycopg2.pool.ThreadedConnectionPool(1, 5, database=database)
-        self._auth = DbAuth(pool)
+        url = config.get("url")
+        if not isinstance(url, str):
+            raise TypeError("url is required and must be a string")
+        self._url = url.rstrip("/")
 
         api.register_password_auth_provider_callbacks(
             auth_checkers={
@@ -27,6 +23,20 @@ class DBAuthProvider:
             },
             check_3pid_auth=self.check_3pid_auth,
         )
+
+    async def _check_password(self, localpart: str, password: str) -> bool:
+        try:
+            await self._api.http_client.post_urlencoded_get_json(
+                f"{self._url}/check_password", {"user": localpart, "password": password}
+            )
+        except HttpResponseException as e:
+            if e.code != 403:
+                logger.error("Error checking password for %s: %s", localpart, e)
+            return False
+        except Exception:
+            logger.exception("Error checking password for %s", localpart)
+            return False
+        return True
 
     async def check_password(
         self,
@@ -44,13 +54,7 @@ class DBAuthProvider:
             localpart = user_id
             user_id = self._api.get_qualified_user_id(localpart)
 
-        try:
-            valid = await deferToThread(self._auth.check_password, localpart, password)
-        except Exception:
-            logger.exception("Error checking password for %s", localpart)
-            return None
-
-        if not valid:
+        if not await self._check_password(localpart, password):
             return None
 
         # The user is authenticated.
@@ -72,13 +76,7 @@ class DBAuthProvider:
         if not localpart or domain != self._api.server_name:
             return None
 
-        try:
-            valid = await deferToThread(self._auth.check_password, localpart, password)
-        except Exception:
-            logger.exception("Error checking password for %s", localpart)
-            return None
-
-        if not valid:
+        if not await self._check_password(localpart, password):
             return None
 
         user_id = self._api.get_qualified_user_id(localpart)

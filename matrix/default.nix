@@ -67,6 +67,7 @@ in {
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver = {
       turn.enable = true;
+      db-auth.allowedUsers = ["matrix-synapse"];
       nginx.hstsHosts = ["matrix.${domain}"];
 
       backup = {
@@ -130,7 +131,7 @@ in {
           {
             module = "db_auth.matrix.DBAuthProvider";
             config = {
-              database = rootCfg.accounts.database;
+              url = "http://127.0.0.1:12343";
             };
           }
         ];
@@ -145,6 +146,8 @@ in {
         max_upload_size = "${toString cfg.upload.maxSizeMb}M";
         url_preview_enabled = true;
         media_retention.remote_media_lifetime = "30d";
+        forget_rooms_on_leave = true;
+        forgotten_room_retention_period = "30d";
         turn_uris = [
           "turn:turn.${domain}:3478?transport=udp"
           "turn:turn.${domain}:3478?transport=tcp"

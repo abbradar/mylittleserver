@@ -6,7 +6,6 @@
   aiohttp-remotes,
   asyncpg,
   limits,
-  psycopg2,
   libpass,
   bcrypt,
   matrix-synapse-unwrapped,
@@ -36,7 +35,6 @@ buildPythonPackage {
       limits
     ]
     ++ lib.optionals withMatrix [
-      psycopg2
       matrix-synapse-unwrapped
     ];
 }

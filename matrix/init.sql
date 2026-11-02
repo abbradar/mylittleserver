@@ -1,5 +1,3 @@
-GRANT auth TO "matrix-synapse";
-
 -- It is important to have C collation:
 -- https://github.com/matrix-org/synapse/blob/develop/docs/postgres.md#fixing-incorrect-collate-or-ctype
 SELECT '

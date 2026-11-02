@@ -22,8 +22,8 @@ http_cors_override = {
 }
 
 -- FIXME: Move this to the NixOS config.
-authentication = "http"
-http_auth_url = "http://127.0.0.1:12344/prosody"
+authentication = "db_auth"
+db_auth_url = "http://127.0.0.1:12344"
 
 welcome_message = "Hello $user! Please visit https://@domain@/private/ for information on this service. Use your login (without domain) and password."
 

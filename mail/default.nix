@@ -677,26 +677,6 @@ in {
       };
     };
 
-    services.fail2ban = {
-      enable = true;
-      jails = let
-        mailPorts = "smtp,submission,submissions,imap,imaps,sieve";
-      in {
-        postfix-sasl.settings = {
-          filter = "postfix[mode=auth]";
-          port = mailPorts;
-        };
-        dovecot.settings = {
-          filter = "dovecot";
-          port = mailPorts;
-        };
-        roundcube-auth.settings = {
-          filter = "roundcube-auth";
-          port = "http,https";
-        };
-      };
-    };
-
     systemd.services.dovecot-purge = {
       description = "Purge expunged Dovecot mails";
       requires = ["dovecot.service"];

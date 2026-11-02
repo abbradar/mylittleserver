@@ -59,6 +59,7 @@ in {
     pruneOpts = mkOption {
       type = types.listOf types.str;
       default = [
+        "--group-by host,tags"
         "--keep-daily 7"
         "--keep-weekly 5"
         "--keep-monthly 12"

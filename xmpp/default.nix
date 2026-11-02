@@ -30,6 +30,7 @@ with lib; let
   xmppSubdomains = [
     "conference"
     "pubsub"
+    "upload"
   ];
 
   xmppDomains = map (name: "${name}.${domain}") xmppSubdomains;
@@ -88,8 +89,10 @@ in {
         _xmpp-client._tcp SRV 0 1 5222 xmpp.${domain}.
         _xmpps-client._tcp SRV 0 1 5223 xmpp.${domain}.
         _xmpp-server._tcp SRV 0 1 5269 xmpp.${domain}.
-        _xmpp-server._tcp.conference SRV 0 1 5269 xmpp.${domain}.
-        _xmpp-server._tcp.pubsub SRV 0 1 5269 xmpp.${domain}.
+        ${concatMapStringsSep "\n" (subdomain: ''
+            _xmpp-server._tcp.${subdomain} SRV 0 1 5269 xmpp.${domain}.
+          '')
+          xmppSubdomains}
       '';
     };
 
@@ -170,7 +173,6 @@ in {
       };
       httpFileShare = {
         domain = "upload.${domain}";
-        # Avoid an additional DNS record and certificate.
         http_host = domain;
         http_external_url = "https://xmpp.${domain}/";
         size_limit = cfg.upload.maxSizeMb * 1024 * 1024;

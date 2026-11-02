@@ -14,14 +14,17 @@ with lib; let
     withService = false;
   };
 
-  matrixClientDiscover = pkgs.writeText "matrix-client-discover.json" (builtins.toJSON {
-    "m.homeserver"."base_url" = "https://matrix.${domain}";
-  });
+  matrixClientDiscover = pkgs.writeText "matrix-client-discover.json" (builtins.toJSON ({
+      "m.homeserver"."base_url" = "https://matrix.${domain}";
+    }
+    // cfg.clientWellKnown));
 
   matrixServerDiscover = pkgs.writeText "matrix-server-discover.json" (builtins.toJSON {
     "m.server" = "matrix.${domain}:443";
   });
 in {
+  imports = [./calls.nix];
+
   options = {
     mylittleserver.matrix = {
       enable = mkEnableOption "MyLittleServer Matrix module";
@@ -49,12 +52,22 @@ in {
           Maximum allowed uploaded file size.
         '';
       };
+
+      clientWellKnown = mkOption {
+        type = types.attrsOf types.anything;
+        default = {};
+        internal = true;
+        description = ''
+          Extra entries for `/.well-known/matrix/client`.
+        '';
+      };
     };
   };
 
   config = mkIf (rootCfg.enable && cfg.enable) {
     mylittleserver = {
       turn.enable = true;
+      nginx.hstsHosts = ["matrix.${domain}"];
 
       backup = {
         paths = [cfg.dataDir];

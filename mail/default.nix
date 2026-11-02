@@ -294,6 +294,8 @@ in {
 
         # Core things
         myhostname = "mx.${domain}";
+        # Matches the PTR record.
+        smtp_helo_name = domain;
         mydestination = [];
         mynetworks_style = "host";
         virtual_mailbox_domains = [domain];
@@ -428,6 +430,8 @@ in {
     };
 
     # Local validating resolver, for DNS blocklists and DANE.
+    mylittleserver.nginx.hstsHosts = ["mail.${domain}" "mta-sts.${domain}"];
+
     mylittleserver.dns-proxy = {
       enable = true;
       extraConfig = ''

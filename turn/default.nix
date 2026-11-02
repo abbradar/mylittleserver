@@ -9,6 +9,8 @@ with lib; let
   cfg = config.mylittleserver.turn;
 
   inherit (rootCfg) domain;
+
+  ip = import ../lib/ip.nix {inherit lib;};
 in {
   options = {
     mylittleserver.turn = {
@@ -41,42 +43,31 @@ in {
       ];
       allowedUDPPortRanges = [
         {
-          from = 49152;
-          to = 65535;
+          from = config.services.coturn.min-port;
+          to = config.services.coturn.max-port;
         } # TURN
       ];
     };
 
     services.coturn = {
       enable = true;
-      no-cli = true;
       use-auth-secret = true;
       static-auth-secret-file = ''"$CREDENTIALS_DIRECTORY"/turn-secret'';
       realm = "turn.${domain}";
       no-tcp-relay = true;
+      # The first 1024 ports of the IANA dynamic range.
+      min-port = 49152;
+      max-port = 50175;
       cert = "/var/lib/acme/turn.${domain}/fullchain.pem";
       pkey = "/var/lib/acme/turn.${domain}/key.pem";
-      # https://www.rtcsec.com/article/slack-webrtc-turn-compromise-and-bug-bounty/#how-to-fix-an-open-turn-relay-to-address-this-vulnerability
+      # Don't relay to internal networks:
+      # https://www.enablesecurity.com/blog/slack-webrtc-turn-compromise-and-bug-bounty/
       extraConfig = ''
-        denied-peer-ip=0.0.0.0-0.255.255.255
-        denied-peer-ip=10.0.0.0-10.255.255.255
-        denied-peer-ip=100.64.0.0-100.127.255.255
-        denied-peer-ip=127.0.0.0-127.255.255.255
-        denied-peer-ip=169.254.0.0-169.254.255.255
-        denied-peer-ip=172.16.0.0-172.31.255.255
-        denied-peer-ip=192.0.0.0-192.0.0.255
-        denied-peer-ip=192.0.2.0-192.0.2.255
-        denied-peer-ip=192.88.99.0-192.88.99.255
-        denied-peer-ip=192.168.0.0-192.168.255.255
-        denied-peer-ip=198.18.0.0-198.19.255.255
-        denied-peer-ip=198.51.100.0-198.51.100.255
-        denied-peer-ip=203.0.113.0-203.0.113.255
-        denied-peer-ip=240.0.0.0-255.255.255.255
-        no-loopback-peers
+        ${concatMapStringsSep "\n" (cidr: let
+          r = ip.cidrRange cidr;
+        in "denied-peer-ip=${r.start}-${r.end}")
+        ip.specialPurpose}
         no-multicast-peers
-
-        no-tlsv1
-        no-tlsv1_1
       '';
     };
 

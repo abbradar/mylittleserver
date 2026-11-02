@@ -62,7 +62,10 @@ in {
         paths = [cfg.dataDir];
         databases = ["prosody"];
       };
-      nginx.authDomains = ["xmpp.${domain}"];
+      nginx = {
+        authDomains = ["xmpp.${domain}"];
+        hstsHosts = ["xmpp.${domain}"];
+      };
       turn.enable = true;
       db-auth.allowedUnsafeUsers = ["prosody"];
       hostMeta.links = [

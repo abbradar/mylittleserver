@@ -14,11 +14,18 @@ with lib; let
     # "stanzadebug"
     "idlecompat"
     "mam_adhoc"
-    "presence_cache"
-    "smacks"
-    "presence_dedup"
     "limit_auth"
+    "sasl2"
+    "sasl2_bind2"
+    "sasl2_sm"
+    "anti_spam"
+    "spam_reporting"
+    "report_forward"
   ];
+
+  conversejs = pkgs.callPackage ./conversejs/package.nix {};
+  # Changes with every package update, so the assets can be cached forever.
+  conversejsPath = "/converse/${baseNameOf (builtins.unsafeDiscardStringContext conversejs.outPath)}";
 
   xmppSubdomains = [
     "conference"
@@ -100,6 +107,7 @@ in {
           [
             "auth_http"
             "http_muc_log"
+            "pubsub_subscription"
           ]
           ++ prosodyExtra;
         withExtraLuaPackages = libs: with libs; [luadbi-postgresql];
@@ -126,14 +134,18 @@ in {
           "http"
           "csi_simple"
           "turn_external"
+          # Local modules
+          "limit_auth_sasl2"
         ]
         ++ prosodyExtra;
+      extraPluginPaths = [./prosody-modules];
       admins = ["admin@${domain}"];
       # We set the necessary options by ourselves.
       xmppComplianceSuite = false;
       extraConfig = let
         luaCfg = pkgs.replaceVars ./prosody.cfg.lua {
           inherit domain;
+          dnsRootKey = "${pkgs.dns-root-data}/root.key";
         };
       in ''
         Include "${luaCfg}"
@@ -170,10 +182,24 @@ in {
       enableACME = true;
       # We set Host to the XMPP server host -- it's needed for Prosody.
       locations = {
-        "/".root = pkgs.replaceVarsWith {
-          src = ./conversejs/index.html;
-          replacements = {inherit domain;};
-          dir = ".";
+        "/" = {
+          root = pkgs.replaceVarsWith {
+            src = ./conversejs/index.html;
+            replacements = {
+              inherit domain;
+              assets = conversejsPath;
+            };
+            dir = ".";
+          };
+          extraConfig = ''
+            add_header Cache-Control "no-cache";
+          '';
+        };
+        "^~ ${conversejsPath}/" = {
+          alias = "${conversejs}/";
+          extraConfig = ''
+            add_header Cache-Control "public, max-age=31536000, immutable";
+          '';
         };
         "/upload/" = {
           proxyPass = "http://127.0.0.1:5280";

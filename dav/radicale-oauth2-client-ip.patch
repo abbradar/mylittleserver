@@ -1,6 +1,6 @@
 --- a/radicale/config.py
 +++ b/radicale/config.py
-@@ -487,6 +487,10 @@
+@@ -498,6 +498,10 @@
              "value": "",
              "help": "OAuth2 client secret",
              "type": str}),
@@ -13,7 +13,7 @@
              "help": "PAM group user should be member of",
 --- a/radicale/auth/oauth2.py
 +++ b/radicale/auth/oauth2.py
-@@ -36,12 +36,17 @@
+@@ -42,12 +42,17 @@
          self._endpoint = configuration.get("auth", "oauth2_token_endpoint")
          self._client_id = configuration.get("auth", "oauth2_client_id")
          self._client_secret = configuration.get("auth", "oauth2_client_secret")
@@ -27,12 +27,12 @@
 +        if self._client_ip_header:
 +            logger.info("auth OAuth2 client IP header: %s", self._client_ip_header)
  
--    def _login(self, login, password) -> str:
-+    def _login_ext(self, login, password, context) -> str:
+-    def _login(self, login: str, password: str) -> str:
++    def _login_ext(self, login: str, password: str, context: auth.AuthContext) -> str:
          """Validate credentials.
          Sends login credentials to oauth token endpoint and checks that a token is returned
          """
-@@ -57,6 +62,11 @@
+@@ -70,6 +75,11 @@
                  req_params["client_secret"] = self._client_secret
  
              req_headers = {"Content-Type": "application/x-www-form-urlencoded"}
